@@ -23,6 +23,10 @@ for (const d of [DATA_DIR, FILES_DIR, BACKUPS, SHARES]) fs.mkdirSync(d, { recurs
 
 let state = { version: 0, data: null };
 if (fs.existsSync(STATE)) state = JSON.parse(fs.readFileSync(STATE, 'utf8'));
+// Sign-in: set AUTH=off only for a private demo on your own computer
+const AUTH_ON = process.env.AUTH !== 'off';
+const Auth = require('./auth')(DATA_DIR);
+if (AUTH_ON && state.data) Auth.syncAccounts(state.data, console.log);
 
 function persist() {
   const tmp = STATE + '.tmp';
@@ -59,20 +63,48 @@ http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://x');
     const p = url.pathname;
 
+    // ---------- sign-in ----------
+    const uid = AUTH_ON ? Auth.userOf(req) : '*';
+    if (p === '/api/login' && req.method === 'POST') {
+      const b = JSON.parse((await readBody(req, 10 * 1024)).toString('utf8') || '{}');
+      const r = Auth.login(req, b.username, b.password);
+      if (r.error) return send(res, r.code, { error: r.error });
+      res.setHeader('Set-Cookie', r.cookie); return send(res, 200, Auth.me(r.uid));
+    }
+    if (p === '/api/logout' && req.method === 'POST') { res.setHeader('Set-Cookie', Auth.logout(req)); return send(res, 200, { ok: true }); }
+    if (p === '/api/me') {
+      if (!AUTH_ON) return send(res, 200, { auth: false });
+      if (!state.data) return send(res, 200, { setup: true });
+      return uid ? send(res, 200, { auth: true, ...Auth.me(uid) }) : send(res, 401, { error: 'Sign in' });
+    }
+    const firstSetup = AUTH_ON && !state.data && p === '/api/state';
+    if (AUTH_ON && !uid && !firstSetup && (p.startsWith('/api/') || p.startsWith('/files/'))) return send(res, 401, { error: 'Sign in' });
+    if (p === '/api/password' && req.method === 'POST') {
+      const b = JSON.parse((await readBody(req, 10 * 1024)).toString('utf8') || '{}');
+      const r = Auth.changePassword(req, uid, b.current, b.next); return send(res, r.error ? 400 : 200, r);
+    }
+    if (p === '/api/accounts' && req.method === 'GET') return send(res, 200, { accounts: Auth.accounts(state.data || { users: [] }, uid) });
+    if (p === '/api/reset' && req.method === 'POST') {
+      const b = JSON.parse((await readBody(req, 10 * 1024)).toString('utf8') || '{}');
+      const r = Auth.reset(state.data || { users: [] }, uid, b.userId); return send(res, r.error ? r.code : 200, r);
+    }
+
     // Shared data: GET returns it, PUT replaces it if the client saw the latest version
     if (p === '/api/state') {
       if (req.method === 'GET') {
         const since = url.searchParams.get('since');
         if (since !== null && +since === state.version) { res.writeHead(204); return res.end(); }
-        return send(res, 200, state);
+        return send(res, 200, AUTH_ON && state.data ? { version: state.version, data: Auth.filterState(state.data, uid) } : state);
       }
       if (req.method === 'PUT') {
         const seen = +(req.headers['if-match'] || -1);
         if (seen !== state.version) return send(res, 409, state);
         const data = JSON.parse((await readBody(req, 50 * 1024 * 1024)).toString('utf8'));
         if (!data || !Array.isArray(data.users) || !Array.isArray(data.projects)) return send(res, 400, { error: 'Invalid data' });
-        state = { version: state.version + 1, data };
+        const merged = AUTH_ON && state.data ? Auth.mergeState(state.data, data, uid) : data;
+        state = { version: state.version + 1, data: merged };
         persist();
+        if (AUTH_ON) Auth.syncAccounts(state.data, console.log);
         return send(res, 200, { version: state.version });
       }
     }
@@ -146,6 +178,7 @@ http.createServer(async (req, res) => {
     if (p.startsWith('/files/') && req.method === 'GET') {
       const f = path.join(FILES_DIR, path.basename(decodeURIComponent(p.slice(7))));
       if (!fs.existsSync(f)) return send(res, 404, { error: 'Not found' });
+      if (AUTH_ON && !Auth.canSeeFile(state.data || {}, uid, path.basename(f))) return send(res, 403, { error: 'Not allowed' });
       const ext = path.extname(f).toLowerCase();
       const how = INLINE.has(ext) && !url.searchParams.has('download') ? 'inline' : 'attachment';
       const total = fs.statSync(f).size;
@@ -167,6 +200,10 @@ http.createServer(async (req, res) => {
       const f = path.join(PUBLIC, rel);
       if (!f.startsWith(PUBLIC) || !fs.existsSync(f) || fs.statSync(f).isDirectory()) return send(res, 404, 'Not found', 'text/plain');
       let body = fs.readFileSync(f);
+      if (rel === 'index.html' && AUTH_ON && state.data) {
+        const t = body.toString('utf8'), a = t.indexOf('<script>window.TENX='), b = a < 0 ? -1 : t.indexOf('</script>', a);
+        if (a >= 0 && b > a) body = Buffer.from(t.slice(0, a) + '<script>window.TENX=null;</script>' + t.slice(b + 9));
+      }
       if (rel === 'index.html' && !body.slice(0, 200).toString().includes('<!doctype')) {
         body = Buffer.concat([Buffer.from('<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"></head><body>\n'), body, Buffer.from('\n</body></html>')]);
       }

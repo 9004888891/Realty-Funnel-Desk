@@ -122,6 +122,7 @@ tr.total td{font-weight:600;background:var(--surface2)}
 .who{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
 .rolechip{font-size:.68rem;text-transform:uppercase;letter-spacing:.06em;font-weight:600;color:var(--muted)}
 .empty{padding:28px;text-align:center;color:var(--muted)}
+.auth-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px 16px;background:var(--bg)}.auth-card{width:min(400px,100%);background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:26px 24px}.auth-form{display:flex;flex-direction:column;gap:12px}.auth-form h2{margin:4px 0 0}.auth-form .field{display:flex;flex-direction:column;gap:4px}.auth-form input{width:100%}
 .studio-panel{border-color:var(--accent)}.studio-panel .studio-b{display:flex;flex-direction:column;gap:16px}tr.sel td{background:var(--surface2)}
 .modal-in.studio{width:min(1180px,96vw);max-height:94vh}.studio-b{display:flex;flex-direction:column;gap:16px;align-items:stretch;justify-content:flex-start;background:var(--surface);padding:14px 16px;overflow:auto}
 .stu-grid{display:grid;grid-template-columns:minmax(0,440px) minmax(0,1fr);gap:20px}.stu-img{display:flex;flex-direction:column;gap:8px;min-width:0}.stu-img canvas{width:100%;max-width:420px;height:auto;border-radius:8px;border:1px solid var(--line);background:#000}
@@ -422,6 +423,7 @@ const Store={mode:'local',version:0,
   async save(data){
     if(this.mode==='server'){
       try{const r=await fetch('api/state',{method:'PUT',headers:{'Content-Type':'application/json','If-Match':String(this.version)},body:JSON.stringify(data)});
+        if(r.status===401){location.reload();return {error:'Your session ended. Sign in again.'};}
         const j=await r.json();if(r.status===409){this.version=j.version;return {conflict:j.data};}
         if(!r.ok)return {error:j.error||'Save failed'};this.version=j.version;return {ok:true};}
       catch(e){return {error:'Could not reach the server. Your change was not saved.'};}
@@ -431,7 +433,7 @@ const Store={mode:'local',version:0,
   },
   async poll(){
     if(this.mode!=='server')return null;
-    try{const r=await fetch('api/state?since='+this.version,{cache:'no-store'});if(r.status===204)return null;const j=await r.json();
+    try{const r=await fetch('api/state?since='+this.version,{cache:'no-store'});if(r.status===204)return null;if(r.status===401){location.reload();return null;}const j=await r.json();
       if(j.version!==this.version){this.version=j.version;return j.data;}}catch(e){}
     return null;
   },
@@ -580,7 +582,7 @@ function header(){
   const tabs=[['overview','Dashboard'],...(v.role==='L1'?[]:[['upload','Upload']]),['repo','Repository'],['studio','Creative studio'],['team','Team & access']];
   return `<div class="bar"><div class="bar-in">
     <div class="brand"><h1>Realty Funnel Desk</h1><span class="mode">${Store.mode==='server'?'Synced to server':'Saved in this browser'}</span></div>
-    <div class="ctl"><label class="label" for="viewer">Viewing as (prototype login)</label><select id="viewer" data-change="viewer">${opts}</select></div>
+    ${authed()?`<div class="ctl"><span class="label">Signed in</span><div class="ctl-row"><strong style="font-weight:600">${esc(v.name)}</strong><span class="rolechip">${ROLE[v.role].label}</span><button class="btn link" data-act="changePw">Password</button><button class="btn link" data-act="signOut">Sign out</button></div></div>`:`    <div class="ctl"><label class="label" for="viewer">Viewing as (demo · no passwords)</label><select id="viewer" data-change="viewer">${opts}</select></div>`}
     <div class="ctl"><span class="label">Report period</span><div class="ctl-row"><input type="date" id="from" aria-label="Start date" data-change="from" value="${u.from}"><span class="muted">to</span><input type="date" id="to" aria-label="End date" data-change="to" value="${u.to}">${u.from||u.to?`<button class="btn link" data-act="clearDates">All time</button>`:''}</div></div>
   </div>
   <div class="tabs" role="tablist">${tabs.map(([k,l])=>`<button class="tab" role="tab" aria-selected="${u.tab===k}" data-act="tab" data-v="${k}">${l}</button>`).join('')}</div></div>`;
@@ -1012,6 +1014,7 @@ function teamView(){
       <div><strong>Account Manager</strong><br>Only the projects they manage: their own and their executives'. Can reallocate within their team.</div>
       <div><strong>Sr Executive / Executive</strong><br>Only the projects assigned to them. Can upload data, plans, platform exports, presentations and creatives, and edit project details for those projects.</div>
     </div></div>
+  ${accountsPanel()}
   <div class="grid2">
     <div class="panel"><h2>${exec?'Your reporting line':v.role==='L1'?'Team structure':'Your team'}</h2><ul class="tree">${treeHtml}</ul></div>
     <div class="panel"><h2>Recent activity</h2>${audit.length?`<div class="tw" style="border:0"><table><tbody>${audit.map(a=>`<tr><td class="t">${fmtDT(a.at)}</td><td class="t l">${esc(user(a.by)?.name||'—')}</td><td class="t l" style="white-space:normal">${esc(a.text)}</td></tr>`).join('')}</tbody></table></div>`:'<div class="empty">No activity yet.</div>'}</div>
@@ -2553,10 +2556,64 @@ document.addEventListener('change',e=>{const el=e.target;if(!el||!el.dataset||!a
   if(c==='stuProj'){e.stopImmediatePropagation();u.stuPid=el.value;u.studio=null;u.gen=null;render();}
   else if(c==='stuSort'){e.stopImmediatePropagation();u.stuSort=el.value;render();}},true);
 
+/* ---------- sign-in (server version): login, first password, sign out, password resets ---------- */
+const authed=()=>!!(app.auth&&app.auth.auth);
+async function authCheck(){try{const r=await fetch('api/me',{cache:'no-store'});
+    if(r.status===401){app.gate=()=>loginScreen();return {stop:true};}
+    const ct=r.headers.get('content-type')||'';if(!r.ok||!ct.includes('json'))return {};
+    const j=await r.json();if(j.setup){app.setup=true;return {};}if(j.auth){app.auth=j;}return {};}catch(e){return {};}}
+function shell(inner){return `<div class="auth-wrap"><div class="auth-card"><div class="brand" style="margin-bottom:6px"><h1>Realty Funnel Desk</h1></div>${inner}</div></div>`;}
+function loginScreen(){const u=app.ui;return shell(`<form id="loginForm" class="auth-form" autocomplete="on">
+    <h2>Sign in</h2>${u.authMsg?`<div class="ok-msg">${esc(u.authMsg)}</div>`:''}${u.authErr?`<div class="err" role="alert">${esc(u.authErr)}</div>`:''}
+    <div class="field"><label for="lgUser">Username</label><input id="lgUser" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="e.g. thomas.joseph" required></div>
+    <div class="field"><label for="lgPass">Password</label><input id="lgPass" name="password" type="password" autocomplete="current-password" required></div>
+    <button class="btn primary" type="submit" ${u.authBusy?'disabled':''}>${u.authBusy?'Signing in…':'Sign in'}</button>
+    <span class="muted" style="font-size:.8rem">Forgot your password? Ask your Account Manager, Team Lead or L1 to reset it from Team &amp; access.</span></form>`);}
+function passwordScreen(first){const u=app.ui,me=user(app.auth.userId)||{};return shell(`<form id="pwForm" class="auth-form">
+    <h2>${first?'Set your password':'Change password'}</h2><span class="muted" style="font-size:.85rem">${first?`Welcome, ${esc(me.name||'')}. Replace the temporary password with your own before you continue.`:'Signed in as '+esc(app.auth.username||'')}</span>
+    ${u.authErr?`<div class="err" role="alert">${esc(u.authErr)}</div>`:''}
+    <div class="field"><label for="pwCur">${first?'Temporary password':'Current password'}</label><input id="pwCur" type="password" autocomplete="current-password" required></div>
+    <div class="field"><label for="pwNew">New password</label><input id="pwNew" type="password" autocomplete="new-password" minlength="8" required><span class="muted" style="font-size:.78rem">At least 8 characters.</span></div>
+    <div class="field"><label for="pwNew2">Repeat new password</label><input id="pwNew2" type="password" autocomplete="new-password" minlength="8" required></div>
+    <div class="actions"><button class="btn primary" type="submit" ${u.authBusy?'disabled':''}>${u.authBusy?'Saving…':'Save password'}</button>${first?'':'<button class="btn" type="button" data-act="pwCancel">Cancel</button>'}</div></form>`);}
+document.addEventListener('submit',async e=>{const f=e.target;if(!f||!['loginForm','pwForm'].includes(f.id))return;e.preventDefault();const u=app.ui;u.authErr='';u.authBusy=true;
+  if(f.id==='loginForm'){const username=f.querySelector('#lgUser').value.trim().toLowerCase(),password=f.querySelector('#lgPass').value;
+    try{const r=await fetch('api/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username,password})});const j=await r.json().catch(()=>({}));
+      if(r.ok){location.reload();return;}u.authErr=j.error||'Sign-in failed.';}catch(err){u.authErr='The server could not be reached.';}
+    u.authBusy=false;document.getElementById('app').innerHTML=loginScreen();const p=document.getElementById('lgPass');if(p)p.focus();return;}
+  const cur=f.querySelector('#pwCur').value,n1=f.querySelector('#pwNew').value,n2=f.querySelector('#pwNew2').value;
+  if(n1!==n2){u.authErr='The two new passwords do not match.';u.authBusy=false;render();return;}
+  try{const r=await fetch('api/password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({current:cur,next:n1})});const j=await r.json().catch(()=>({}));
+    if(r.ok){app.auth.mustChange=false;app.gate=null;u.authBusy=false;render();toast('Password saved.');return;}u.authErr=j.error||'The password could not be changed.';}
+  catch(err){u.authErr='The server could not be reached.';}
+  u.authBusy=false;render();});
+document.addEventListener('click',async e=>{const el=e.target.closest&&e.target.closest('[data-act]');if(!el)return;const a=el.dataset.act;
+  if(a==='signOut'){try{await fetch('api/logout',{method:'POST'});}catch(err){}location.reload();}
+  else if(a==='changePw'){app.ui.authErr='';app.gate=()=>passwordScreen(false);render();}
+  else if(a==='pwCancel'){app.gate=null;app.ui.authErr='';render();}
+  else if(a==='acctReset'){const id=el.dataset.v,n=user(id);if(!n)return;
+    if(app.ui.confirmReset!==id){app.ui.confirmReset=id;render();return;}app.ui.confirmReset=null;
+    try{const r=await fetch('api/reset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({userId:id})});const j=await r.json();
+      if(!r.ok){toast(j.error||'The password could not be reset.');return;}app.ui.newPw={id,username:j.username,password:j.password};app.accounts=null;render();}
+    catch(err){toast('The server could not be reached.');}}
+  else if(a==='acctDone'){app.ui.newPw=null;render();}
+  else if(a==='acctCopy'){const p=app.ui.newPw;if(!p)return;try{await navigator.clipboard.writeText(`Realty Funnel Desk\n${location.origin+location.pathname}\nUsername: ${p.username}\nTemporary password: ${p.password}`);toast('Copied.');}catch(err){toast('Copy did not work here. Select the text instead.');}}});
+async function loadAccounts(){if(!authed()||app.accounts||app._acctLoading)return;app._acctLoading=true;
+  try{const r=await fetch('api/accounts',{cache:'no-store'});if(r.ok){app.accounts=(await r.json()).accounts||[];if(app.ui.tab==='team')render();}}catch(e){}app._acctLoading=false;}
+function accountsPanel(){if(!authed())return '';const v=viewer();if(!['L1','LEAD','AM'].includes(v.role))return '';
+  if(!app.accounts){setTimeout(loadAccounts,0);return `<div class="panel"><h2>Sign-in accounts</h2><span class="muted">Loading…</span></div>`;}
+  const np=app.ui.newPw,rows=app.accounts.map(a=>{const u=user(a.userId);if(!u)return '';return `<tr><td class="t">${esc(u.name)}<span class="sub">${esc(ROLE[u.role]?.label||'')}</span></td><td class="t l num">${esc(a.username||'—')}</td>
+      <td class="t l">${a.mustChange?'<span class="chip due">Temporary password</span>':'<span class="chip ok">Own password set</span>'}${a.lastLogin?`<span class="sub">Last sign-in ${fmtDT(a.lastLogin.slice(0,16))}</span>`:'<span class="sub">Not signed in yet</span>'}</td>
+      <td class="t l">${a.userId===v.id?'<button class="btn link" data-act="changePw">Change my password</button>':app.ui.confirmReset===a.userId?`<button class="btn link" style="color:var(--bad)" data-act="acctReset" data-v="${a.userId}">Confirm reset</button>`:`<button class="btn link" data-act="acctReset" data-v="${a.userId}">Reset password</button>`}</td></tr>`;}).join('');
+  return `<div class="panel"><div class="panel-h"><div><h2>Sign-in accounts</h2><span class="muted" style="font-size:.8rem">${v.role==='L1'?'Everyone':'Your team'}. Resetting gives a temporary password; the person sets their own at the next sign-in and is signed out everywhere else.</span></div></div>
+    ${np?`<div class="note" style="flex-direction:column;align-items:stretch"><span><strong>New temporary password for ${esc(user(np.id)?.name||'')}</strong> (shown once):</span><pre class="cols" style="margin:6px 0">Username: ${esc(np.username)}\nTemporary password: ${esc(np.password)}</pre><span class="actions"><button class="btn" data-act="acctCopy">Copy sign-in details</button><button class="btn" data-act="acctDone">Done</button></span></div>`:''}
+    <div class="tw" style="border:0"><table><thead><tr><th class="l">Person</th><th class="l">Username</th><th class="l">Status</th><th class="l"></th></tr></thead><tbody>${rows}</tbody></table></div></div>`;}
+
 /* ---------- render & events ---------- */
 function render(){
   MEMO={};
   const root=document.getElementById('app');
+  if(app.gate){root.innerHTML=app.gate();return;}
   const focusId=document.activeElement&&document.activeElement.id;
   if(app.ui.tab==='upload'&&viewer().role==='L1')app.ui.tab='overview';
   const t=app.ui.tab;
@@ -2690,6 +2747,7 @@ document.addEventListener('drop',e=>{const d=e.target.closest&&e.target.closest(
 
 /* ---------- boot ---------- */
 (async function(){
+  const gate=await authCheck();if(gate.stop){render();return;}
   const data=await Store.init();
   app.data=data&&data.users?data:seed();
   if(!app.data.docs)app.data.docs=[];
@@ -2697,10 +2755,12 @@ document.addEventListener('drop',e=>{const d=e.target.closest&&e.target.closest(
   ['raws','shares','crm'].forEach(k=>{if(!app.data[k])app.data[k]=[];});['profiles','notes','reviews'].forEach(k=>{if(!app.data[k])app.data[k]={};});if(!app.data.boardNotes)app.data.boardNotes=[];
   const rosterChanged=applyRoster(app.data);
   const loadedTenx=injectTenx(app.data)|upgradeTenx(app.data)|upgradeTenxDetails(app.data)|rosterChanged;
-  if(!app.data.boardSeeded&&app.data.projects.some(p=>p.id==='tenx9')){const l1=app.data.users.find(x=>x.role==='L1');app.data.boardSeeded=true;app._seeded=true;if(l1)app.data.boardNotes.push({id:'bc-sample',projectId:'tenx9',by:l1.id,at:'2026-10-14T11:20:00',text:'Sample board comment: September CPQL is ₹15,242 with only 48 QL. What is changing in October to bring it down, and should budget move from Google to Meta lookalikes?',replies:[],done:false});}
+  if(!app.data.boardSeeded&&app.data.projects.some(p=>p.id==='tenx9')){const l1=app.data.users.find(x=>x.role==='L1');app.data.boardSeeded=true;app._seeded=true;if(l1)app.data.boardNotes.push({id:'bc-sample',projectId:'tenx9',by:l1.id,at:'2026-10-14T11:20:00',text:'Sample board comment: CPQL went up in September. What is changing in October to bring it down, and should budget move between Google and Meta?',replies:[],done:false});}
   try{const v=localStorage.getItem(LS_VIEW);if(v&&app.data.users.some(u=>u.id===v))app.ui.viewer=v;}catch(e){}
   if(!app.data.users.some(u=>u.id===app.ui.viewer))app.ui.viewer=app.data.users[0].id;
-  if(!data||loadedTenx||app._seeded)Store.save(app.data);
+  if(authed()){app.ui.viewer=app.auth.userId;if(app.auth.mustChange)app.gate=()=>passwordScreen(true);}
+  if(!data||loadedTenx||app._seeded)await Store.save(app.data);
+  if(app.setup){app.ui.authMsg='Setup complete. Every team member now has a sign-in account; the temporary passwords are in data/initial-passwords.txt on the server.';app.gate=()=>loginScreen();render();return;}
   render();
   setInterval(async()=>{if(saving)return;const fresh=await Store.poll();if(fresh){const typing=document.activeElement&&(/INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)||app.ui.editProfile||app.ui.editReview);app.data=fresh;if(!typing)render();}},30000);
 })();

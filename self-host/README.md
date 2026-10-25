@@ -126,6 +126,20 @@ Uploads are limited to 500 MB per file by default (`MAX_UPLOAD_MB=1000 node serv
 - **Report freshness:** each project has a cadence (daily, weekly, monthly). Up to date ≤ cadence + 1 day since the last report's end date; Update due ≤ 2× cadence + 1; Overdue after that.
 - **Costs** (CPL, CPQL, CPSV, CPB, CPC) are recalculated from spend and counts, never read from the file.
 
+## Sign-in (self-hosted version)
+
+Each person signs in with a username and password; their role decides what the **server** sends them, so nobody can see another team's projects even by looking at the network traffic.
+
+- **First start:** start the server (`node server.js`) and open the dashboard once in a browser straight away. It loads the data and creates an account for every team member. The usernames and **temporary passwords** are written to `data/initial-passwords.txt` (also mentioned in the server log). Hand them out, then delete the file.
+- **Usernames** are the name in lower case with dots: `viresh`, `thomas.joseph`, `manik.jayee`.
+- **First sign-in:** everyone must replace the temporary password with their own (at least 8 characters).
+- **Forgotten passwords:** Team & access → Sign-in accounts. L1 can reset anyone; Team Leads and AMs can reset people in their own team. The new temporary password is shown once, and the person is signed out everywhere else.
+- **New team members** added in Team & access get an account automatically; reset their password there to get their first temporary password.
+- **What the server enforces:** sign-in for all data and files; each person only receives their projects (L1 and Team Leads: all; AMs: their team's; executives: their assigned projects); saves can only change records of projects the person can see; only L1 can change the team list; files of other projects are refused. Five wrong passwords lock that username for 15 minutes from that address. Sessions last 7 days (`SESSION_DAYS`).
+- **Use HTTPS** in front of the server (for example nginx or Caddy with a certificate) and set `COOKIE_SECURE=1`.
+- `AUTH=off node server.js` turns sign-in off for a private demo on your own computer.
+- The Vercel / review-link version has no server, so it keeps the **demo picker** ("Viewing as · demo, no passwords"); use Vercel's Deployment Protection there.
+
 ## Team (prototype logins)
 
 From the team sheet: **L1** Viresh. **Team Leads** Iliyas Shaikh, Neha Singh, Thomas Joseph. **Account Managers** Chaitanya Sharma and Ashutosh Chauhan (Iliyas); Allwyn Coutinho and Kamal Jagate (Neha Singh); Aman Mishra and Dimple Yadav (Thomas). **Sr Executives / Executives**: Shubham Chaurasia (Chaitanya); Dipen Patel (Ashutosh); Shruti Zaware (Allwyn); Sourav Singh, Anjali Parmar (Kamal); Manik Jayee, Wajahat Ali, Raj Roy (Aman); Aijaz Shaikh, Khushi Balmiki, Arya Mondel (Dimple). The roster is the `ROSTER` list in `public/index.html`; saved data from earlier versions is moved onto it automatically on first load (members added through Team & access are kept).
@@ -198,8 +212,8 @@ The dashboard and every project page start with a filter bar: **Location**, **Br
 
 This is a prototype for review. Plan these items before all 40+ people use it daily:
 
-1. **Real logins.** The "Viewing as" dropdown is for demos. Replace it with sign-in (company Google/Microsoft SSO or username/password) and have the server decide the user.
-2. **Server-side permissions (required before juniors get access).** Today the browser hides other projects from Sr/Jr Executives on every screen, but the server still sends the full data file to every browser, so someone using browser developer tools could read it. The server must filter data per user and reject edits outside a user's scope, so data can't be read with browser tools.
+1. **Sign-in is built in** (see "Sign-in"). Optional later: company Google or Microsoft single sign-on, and finer edit rules on the server (today the server limits saves to the projects a person can see; within those, finer rules such as "the board is read-only" are applied by the page).
+2. **HTTPS** in front of the server, with `COOKIE_SECURE=1`.
 3. **A database.** Platform exports with daily rows make the data file grow quickly (the example data is about 1 MB). Move from one `state.json` file to PostgreSQL or MySQL with tables for users, projects, money entries, plans, plan rows, reports, report rows, files and audit log. The JSON export maps one-to-one to these tables.
 4. **Per-change API.** Replace "save everything" with endpoints per action (`POST /reports`, `POST /money`, `PATCH /projects/:id/owner`) so simultaneous edits never collide.
 5. **Host the spreadsheet library.** The page loads SheetJS from cdnjs. For offline or locked-down servers, download `xlsx.full.min.js` into `public/` and point the `<script>` tag at it.
