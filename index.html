@@ -1,3 +1,6 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"></head><body>
+<meta charset="utf-8">
 <title>Realty Funnel Desk</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -122,6 +125,7 @@ tr.total td{font-weight:600;background:var(--surface2)}
 .who{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
 .rolechip{font-size:.68rem;text-transform:uppercase;letter-spacing:.06em;font-weight:600;color:var(--muted)}
 .empty{padding:28px;text-align:center;color:var(--muted)}
+.stu-up .drop{padding:14px}.thumbbtn{position:relative}.vbadge{position:absolute;left:3px;bottom:3px;background:rgba(0,0,0,.7);color:#fff;font-size:10px;line-height:1;padding:3px 4px;border-radius:4px}
 .auth-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px 16px;background:var(--bg)}.auth-card{width:min(400px,100%);background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:26px 24px}.auth-form{display:flex;flex-direction:column;gap:12px}.auth-form h2{margin:4px 0 0}.auth-form .field{display:flex;flex-direction:column;gap:4px}.auth-form input{width:100%}
 .studio-panel{border-color:var(--accent)}.studio-panel .studio-b{display:flex;flex-direction:column;gap:16px}tr.sel td{background:var(--surface2)}
 .modal-in.studio{width:min(1180px,96vw);max-height:94vh}.studio-b{display:flex;flex-direction:column;gap:16px;align-items:stretch;justify-content:flex-start;background:var(--surface);padding:14px 16px;overflow:auto}
@@ -428,7 +432,7 @@ const Store={mode:'local',version:0,
         if(!r.ok)return {error:j.error||'Save failed'};this.version=j.version;return {ok:true};}
       catch(e){return {error:'Could not reach the server. Your change was not saved.'};}
     }
-    try{localStorage.setItem(LS_KEY,JSON.stringify(data));}catch(e){}
+    try{localStorage.setItem(LS_KEY,JSON.stringify(data));}catch(e){return {error:'This browser\'s storage is full, so the last change was not kept. Remove some creatives, or use the server version for large files.'};}
     return {ok:true};
   },
   async poll(){
@@ -2356,10 +2360,14 @@ function paintView(cv,src,S,mode,peaks,els){const W=cv.width,H=cv.height,x=cv.ge
 const AWORD=v=>v>=70?'Strong':v>=45?'Fair':'Weak';
 function scoresOf(S){const cl=v=>Math.round(Math.max(0,Math.min(1,v))*100),focus=cl((S.focus-0.18)/0.3),clutter=cl((S.clutter-0.06)/0.28),contrast=cl((S.contrast-0.06)/0.22);
   return {focus,clutter,contrast,overall:Math.round(focus*0.45+(100-clutter)*0.3+contrast*0.25)};}
-async function analyseCreative(id){const doc=(D().docs||[]).find(d=>d.id===id);if(!doc)return null;if(STU[id]&&STU[id].S)return STU[id];
-  const img=await loadImg(docHref(doc));const crop=autoCrop(img);const P=pix(img,crop,Math.min(320,crop?crop.w:img.naturalWidth)*1);const S=saliency(pix(img,crop,120));
-  STU[id]={img,crop,P,S,peaks:peaksOf(S,3),sc:scoresOf(S)};return STU[id];}
-function aiFor(id){return ((D().creativeAI||{})[id])||null;}
+const isShot=d=>!!d.screenshot||/review deck|screenshot/i.test(d.note||'');
+const frameIdx=id=>{const d=(D().docs||[]).find(x=>x.id===id);return d&&d.frames&&d.frames.length?Math.min(id===app.ui.studio?(app.ui.stuFrame||0):0,d.frames.length-1):-1;};
+const thumbSrc=d=>d.frames&&d.frames.length?d.frames[0].src:docHref(d);
+const aiKey=id=>{const f=frameIdx(id);return f>=0?id+'#'+f:id;};
+async function analyseCreative(id){const doc=(D().docs||[]).find(d=>d.id===id);if(!doc)return null;const fi=frameIdx(id);if(STU[id]&&STU[id].S&&STU[id].fi===fi)return STU[id];
+  const img=await loadImg(fi>=0?doc.frames[fi].src:docHref(doc));const crop=isShot(doc)?autoCrop(img):null;const P=pix(img,crop,Math.min(320,crop?crop.w:img.naturalWidth)*1);const S=saliency(pix(img,crop,120));
+  STU[id]={img,crop,P,S,peaks:peaksOf(S,3),sc:scoresOf(S),fi};return STU[id];}
+function aiFor(id){return ((D().creativeAI||{})[aiKey(id)])||null;}
 function elemsWithCrop(id){const A=aiFor(id),st=STU[id];if(!A||!st)return [];const cr=st.crop,iw=st.img.naturalWidth,ih=st.img.naturalHeight;
   return (A.elements||[]).filter(e=>Array.isArray(e.box)&&e.box.length===4).map(e=>{let [x,y,w,h]=e.box.map(Number);if(cr){x=(x*iw-cr.x)/cr.w;y=(y*ih-cr.y)/cr.h;w=w*iw/cr.w;h=h*ih/cr.h;}
     const cx=Math.max(0,x),cy=Math.max(0,y),cw=Math.min(1,x+w)-cx,ch=Math.min(1,y+h)-cy;return Object.assign({},e,{cbox:cw>0.01&&ch>0.01?[cx,cy,cw,ch]:null});}).filter(e=>e.cbox);}
@@ -2386,7 +2394,7 @@ let SAMPLE=undefined;async function getSample(){if(SAMPLE!==undefined)return SAM
 function aiPrompt(id){const doc=(D().docs||[]).find(d=>d.id===id),p=proj(doc.projectId),pf=(D().profiles||{})[p.id]||{},row=creativeRows(p.id).find(r=>normS(r.name)===normS(doc.title));
   return `You are reviewing a real-estate performance ad for an Indian property project, like an ad-creative analyst. The image may be a screenshot of a Facebook/Instagram feed ad; analyse only the ad creative itself.
 Project: ${p.name} (${p.brand}, ${p.location}). ${pf.inventory||''} ${pf.priceRange?'Price range: '+pf.priceRange+'.':''} ${pf.micro&&pf.micro.name?'Micro-market: '+pf.micro.name+'.':''} ${pf.usps?'USPs: '+pf.usps+'.':''}
-Creative name: ${doc.title}. ${row?`Results: spend ${Math.round(row.spend)}, leads ${Math.round(row.leads)}${row.ql!=null?`, qualified leads ${Math.round(row.ql)}`:''}.`:''}
+Creative name: ${doc.title}. ${frameIdx(id)>=0?`This image is the frame at ${doc.frames[frameIdx(id)].t.toFixed(1)} s of a ${doc.duration||''} s video ad; judge it as that moment of the video. `:''}${row?`Results: spend ${Math.round(row.spend)}, leads ${Math.round(row.leads)}${row.ql!=null?`, qualified leads ${Math.round(row.ql)}`:''}.`:''}
 Reply with only one JSON object, no other text:
 {"creativeBox":[x,y,w,h],"elements":[{"type":"headline|subhead|price|offer|cta|logo|project_name|location|person|building|interior|amenity|map|qr|rera|other_text","text":"visible text if any","box":[x,y,w,h]}],"hook":"one sentence: what a viewer notices first and whether it sells the project","strengths":["..."],"issues":["..."],"suggestions":["specific, practical changes for the next version, max 5"],"newCopy":{"headline":"max 7 words","subhead":"max 10 words","price":"e.g. 2 BHK from ₹1.53 Cr*","offer":"short offer line or empty","cta":"max 4 words"}}
 All boxes are fractions (0-1) of the full image: x, y of the top-left corner, then width, height. creativeBox is the ad creative area inside the screenshot. List every visible element.`;}
@@ -2400,7 +2408,7 @@ async function runAI(id){const st=await analyseCreative(id);const doc=(D().docs|
       if(!r.ok)err=j.error||'The AI reading is not available on this server.';else res=j.result;}
     else err='The AI reading needs Claude in this view, or an API key on your server (see the README). The heatmap and scores still work without it.';}
   catch(e){err=e&&e.code==='not_granted'?'Claude was not allowed for this page, so the AI reading is off. The heatmap and scores still work.':e&&e.code==='rate_limited'?'Too many AI requests just now. Try again in a little while.':'The AI reading could not be completed. Try again.';}
-  if(res&&typeof res==='object'&&Array.isArray(res.elements)){D().creativeAI=D().creativeAI||{};D().creativeAI[id]=Object.assign({at:nowStamp(),by:app.ui.viewer},res);u.stuAI='';u.gen=null;
+  if(res&&typeof res==='object'&&Array.isArray(res.elements)){D().creativeAI=D().creativeAI||{};D().creativeAI[aiKey(id)]=Object.assign({at:nowStamp(),by:app.ui.viewer},res);u.stuAI='';u.gen=null;
     await commit(()=>{},`AI reading of creative ${doc.title}`,doc.projectId);}
   else{u.stuAI=err||'The AI reply could not be read. Try again.';render();}}
 /* new version generator */
@@ -2481,9 +2489,9 @@ function studioPanel(id){const u=app.ui;if(!id)return '';const doc=(D().docs||[]
     <div class="panel-h"><div style="min-width:0"><strong style="overflow-wrap:anywhere">Creative studio · ${esc(doc.title)}</strong><span class="sub">${esc(p.name)}${row?` · ${inr(row.spend)} spend · ${num(row.leads)} leads${row.ql!=null?' · '+num(row.ql)+' QL':''}${perf&&perf.cost?` · ${avg.cn} ${inr(perf.cost)} (project ${inr(avg.cost)})`:''}`:''}</span></div><button class="btn" data-act="closeStudio">Back to all creatives</button></div>
     <div class="studio-b">
       <div class="stu-grid">
-        <div class="stu-img"><div class="subtabs">${modes}${A?`<label class="check" for="stuBoxes"><input type="checkbox" id="stuBoxes" data-change="stuBoxes" ${u.stuBoxes?'checked':''}>Show elements</label>`:''}</div>
+        <div class="stu-img">${doc.frames&&doc.frames.length?`<div class="subtabs" role="tablist" aria-label="Video frame">${doc.frames.map((f,i)=>`<button class="subtab" data-act="stuFrame" data-v="${i}" aria-selected="${frameIdx(id)===i}">${i===0?'Hook':i===1?'Early':'Middle'} · ${f.t.toFixed(1)} s</button>`).join('')}${docHref(doc)?`<button class="btn link" data-act="viewDoc" data-v="${doc.id}">Play video</button>`:''}</div>`:''}<div class="subtabs">${modes}${A?`<label class="check" for="stuBoxes"><input type="checkbox" id="stuBoxes" data-change="stuBoxes" ${u.stuBoxes?'checked':''}>Show elements</label>`:''}</div>
           <canvas id="stuCanvas" width="420" height="560" role="img" aria-label="${mode==='original'?'The creative':'Predicted attention heatmap of the creative'}"></canvas>
-          <span class="muted" id="stuErr" style="font-size:.76rem">Predicted attention from a visual saliency model (contrast, colour, edges and text density, centre bias). It estimates where eyes go in the first seconds; it is not eye-tracking. Numbers mark the likely viewing order.${st&&st.crop?' The feed frame around the ad was cropped out.':''}${st&&st.P&&st.crop&&st.crop.w<500?' This is a small preview image: upload the full-size creative with the same name for a sharper reading and new version.':''}</span></div>
+          <span class="muted" id="stuErr" style="font-size:.76rem">Predicted attention from a visual saliency model (contrast, colour, edges and text density, centre bias). It estimates where eyes go in the first seconds; it is not eye-tracking. Numbers mark the likely viewing order.${st&&st.crop?' The feed frame around the ad was cropped out.':''}${st&&st.img&&(st.crop?st.crop.w:st.img.naturalWidth)<500?' This is a small preview image: upload the full-size creative with the same name for a sharper reading and new version.':''}${doc.frames?` Videos are read frame by frame; the new version is a static built from the chosen frame.`:''}</span></div>
         <div class="stu-side">
           ${sc?`<div id="stuScores" data-done="1"><h3>Scores</h3>${bar('Overall',sc.overall)}${bar('Focus',sc.focus)}${bar('Clutter',sc.clutter,true)}${bar('Contrast',sc.contrast)}<span class="muted" style="font-size:.76rem">Focus: how much attention goes to a few areas. Clutter: how busy the creative is (lower is better).</span></div>
             <div><h3>Viewing order</h3><ol class="gaze">${gaze}</ol></div>`:'<div id="stuScores"><span class="muted">Reading the creative…</span></div>'}
@@ -2525,7 +2533,7 @@ document.addEventListener('change',e=>{const el=e.target;if(!el||!el.dataset||!a
 document.addEventListener('input',e=>{const el=e.target;if(el&&el.dataset&&el.dataset.change==='gen'&&app.ui.gen){app.ui.gen[el.dataset.k]=el.value;clearTimeout(paintStudio._t);paintStudio._t=setTimeout(paintStudio,120);}});
 
 /* ---------- creative studio tab ---------- */
-function studioDocs(pid){return (D().docs||[]).filter(d=>d.projectId===pid&&d.category==='creative'&&docHref(d)&&fileKind(d.file,d.mime)==='image');}
+function studioDocs(pid){return (D().docs||[]).filter(d=>d.projectId===pid&&d.category==='creative'&&((d.frames&&d.frames.length)||(docHref(d)&&fileKind(d.file,d.mime)==='image')));}
 let SCORING=false;async function scoreAllCreatives(){if(SCORING)return;const pid=app.ui.stuPid;if(!pid)return;const todo=studioDocs(pid).filter(d=>!STU[d.id]);if(!todo.length)return;
   SCORING=true;for(const d of todo){try{await analyseCreative(d.id);}catch(e){STU[d.id]={failed:true};}}SCORING=false;if(app.ui.tab==='studio'&&app.ui.stuPid===pid)render();}
 function studioTab(){const u=app.ui,vis=visibleProjects(),withC=vis.filter(p=>studioDocs(p.id).length);
@@ -2534,16 +2542,20 @@ function studioTab(){const u=app.ui,vis=visibleProjects(),withC=vis.filter(p=>st
   const p=proj(u.stuPid),docs=studioDocs(p.id),rows=creativeRows(p.id),useQ=rows.some(r=>(r.ql||0)>0);
   if(u.studio&&!docs.some(d=>d.id===u.studio))u.studio=null;
   const match=d=>rows.find(r=>normS(r.name)===normS(d.title))||rows.find(r=>normS(r.name).includes(normS(d.title))||normS(d.title).includes(normS(r.name)));
-  const list=docs.map(d=>{const r=match(d),st=STU[d.id];return {d,r,sc:st&&st.sc,fmt:creativeFormat(d.title,p.id),ai:!!aiFor(d.id),cost:r?(useQ?div(r.spend,r.ql):div(r.spend,r.leads)):null};});
+  const list=docs.map(d=>{const r=match(d),st=STU[d.id];return {d,r,sc:st&&st.sc,fmt:d.frames?'Video':fileKind(d.file,d.mime)==='image'&&!/video|reel/i.test(d.title)&&d.note==='Added in the creative studio'?'Static':creativeFormat(d.title,p.id),ai:!!aiFor(d.id),cost:r?(useQ?div(r.spend,r.ql):div(r.spend,r.leads)):null};});
   const sort=u.stuSort||'spend',by={spend:(a,b)=>((b.r&&b.r.spend)||0)-((a.r&&a.r.spend)||0),score:(a,b)=>((b.sc&&b.sc.overall)||0)-((a.sc&&a.sc.overall)||0),cost:(a,b)=>(a.cost||1e12)-(b.cost||1e12),name:(a,b)=>a.d.title.localeCompare(b.d.title)}[sort];list.sort(by);
   const pick=`<div class="qf"><div class="field qf-p"><label for="stuProj">Project</label><select id="stuProj" data-change="stuProj">${vis.map(x=>`<option value="${x.id}" ${x.id===p.id?'selected':''}>${esc(x.name)} (${studioDocs(x.id).length} creative${studioDocs(x.id).length===1?'':'s'})</option>`).join('')}</select></div>
     <div class="field"><label for="stuSort">Sort by</label><select id="stuSort" data-change="stuSort">${[['spend','Spend'],['score','Attention score'],['cost',useQ?'CPQL (lowest first)':'CPL (lowest first)'],['name','Name']].map(([k,l])=>`<option value="${k}" ${k===sort?'selected':''}>${l}</option>`).join('')}</select></div>
-    ${canUpload(p.id)?`<div class="field" style="flex:0 0 auto"><button class="btn" data-act="uploadFor" data-v="${p.id}">Upload creatives</button></div>`:''}</div>`;
+</div>
+    ${canUpload(p.id)?`<div class="panel stu-up"><div class="panel-h"><div><h2>Add creatives</h2><span class="muted" style="font-size:.8rem">Statics (JPG, PNG, WebP) or videos (MP4, MOV, WebM) for ${esc(p.name)}. No performance data is needed: the heatmap, AI reading and new version work on the creative alone.</span></div>
+        <div class="field" style="min-width:140px"><label for="stuChannel">Channel</label><select id="stuChannel" data-change="stuChannel">${['Meta','Google','YouTube','LinkedIn','Other'].map(c=>`<option ${(u.stuChannel||'Meta')===c?'selected':''}>${c}</option>`).join('')}</select></div></div>
+      <label class="drop" id="stuDrop" for="stuFile"><strong>${u.stuBusy?'Reading creatives…':'Choose or drop statics and videos'}</strong><span class="muted" style="font-size:.85rem">Several at once is fine. Videos are read at the hook (about 1 s), at 3 s and in the middle.</span>
+        <input id="stuFile" type="file" accept="image/*,video/*,.mp4,.mov,.webm,.m4v" multiple data-change="stuFile" style="max-width:100%" ${u.stuBusy?'disabled':''}></label></div>`:''}`;
   const scored=list.filter(x=>x.sc&&x.cost);let corr='';
   if(scored.length>=5){const top=[...scored].sort((a,b)=>b.sc.overall-a.sc.overall),half=Math.floor(top.length/2),hi=top.slice(0,half),lo=top.slice(-half),avg=a=>a.reduce((t,x)=>t+x.cost,0)/a.length;
     const h=avg(hi),l=avg(lo);corr=`<span class="muted" style="font-size:.82rem">The ${half} highest-scoring creatives average ${inr(h)} ${useQ?'CPQL':'CPL'}, against ${inr(l)} for the ${half} lowest-scoring. ${h<l*0.9?'Higher attention scores go with cheaper results here.':h>l*1.1?'Here the attention score is not what drives results; the message and offer matter more.':'The attention score makes little difference to results here.'}</span>`;}
   const table=list.length?`<div class="tw"><table class="perf"><thead><tr><th class="l"><span class="sr">Image</span></th><th class="l">Creative</th><th>Overall</th><th>Focus</th><th>Clutter</th><th>Spend</th><th>Leads</th>${useQ?'<th>QL</th><th>CPQL</th>':'<th>CPL</th>'}<th class="l"></th></tr></thead><tbody>
-    ${list.map(x=>`<tr class="click${u.studio===x.d.id?' sel':''}" data-act="stuPick" data-v="${x.d.id}" tabindex="0"><td class="t l"><span class="thumbbtn"><img src="${esc(docHref(x.d))}" alt=""></span></td>
+    ${list.map(x=>`<tr class="click${u.studio===x.d.id?' sel':''}" data-act="stuPick" data-v="${x.d.id}" tabindex="0"><td class="t l"><span class="thumbbtn">${x.d.frames?'<span class="vbadge">▶</span>':''}<img src="${esc(thumbSrc(x.d))}" alt=""></span></td>
       <td class="t l" style="white-space:normal;min-width:170px"><strong style="font-weight:600">${esc(x.d.title)}</strong><span class="sub">${esc(x.fmt==='Unclassified'?'Format not known':CFMT_LABEL[x.fmt].replace(/s$/,''))}${x.ai?' · AI read':''}</span></td>
       <td>${x.sc?`<strong>${x.sc.overall}</strong>`:'…'}</td><td>${x.sc?x.sc.focus:'…'}</td><td>${x.sc?x.sc.clutter:'…'}</td>
       <td>${x.r?inr(x.r.spend):'—'}</td><td>${x.r?num(x.r.leads):'—'}</td>${useQ?`<td>${x.r&&x.r.ql!=null?num(x.r.ql):'—'}</td>`:''}<td>${x.cost?inr(x.cost):'—'}</td>
@@ -2608,6 +2620,38 @@ function accountsPanel(){if(!authed())return '';const v=viewer();if(!['L1','LEAD
   return `<div class="panel"><div class="panel-h"><div><h2>Sign-in accounts</h2><span class="muted" style="font-size:.8rem">${v.role==='L1'?'Everyone':'Your team'}. Resetting gives a temporary password; the person sets their own at the next sign-in and is signed out everywhere else.</span></div></div>
     ${np?`<div class="note" style="flex-direction:column;align-items:stretch"><span><strong>New temporary password for ${esc(user(np.id)?.name||'')}</strong> (shown once):</span><pre class="cols" style="margin:6px 0">Username: ${esc(np.username)}\nTemporary password: ${esc(np.password)}</pre><span class="actions"><button class="btn" data-act="acctCopy">Copy sign-in details</button><button class="btn" data-act="acctDone">Done</button></span></div>`:''}
     <div class="tw" style="border:0"><table><thead><tr><th class="l">Person</th><th class="l">Username</th><th class="l">Status</th><th class="l"></th></tr></thead><tbody>${rows}</tbody></table></div></div>`;}
+
+/* ---------- creative studio uploads ---------- */
+async function videoFrames(file){const url=URL.createObjectURL(file),v=document.createElement('video');v.muted=true;v.playsInline=true;v.preload='auto';v.src=url;
+  await new Promise((ok,bad)=>{v.onloadeddata=ok;v.onerror=()=>bad(new Error('video'));setTimeout(()=>bad(new Error('timeout')),20000);});
+  const dur=isFinite(v.duration)?v.duration:0,ts=[Math.min(1,dur*0.15),Math.min(3,dur*0.35),dur/2].map(t=>Math.max(0,Math.min(Math.max(0,dur-0.05),t)));
+  const frames=[];for(const t of ts){if(Math.abs(v.currentTime-t)>0.01)await new Promise(ok=>{v.onseeked=ok;v.currentTime=t;setTimeout(ok,4000);});
+    const W=Math.min(720,v.videoWidth||720),H=Math.round(W*(v.videoHeight||1280)/(v.videoWidth||720)),c=document.createElement('canvas');c.width=W;c.height=H;c.getContext('2d').drawImage(v,0,0,W,H);frames.push({t,src:c.toDataURL('image/jpeg',0.78)});}
+  return {frames,duration:dur,url};}
+async function shrinkImage(file,max){const url=URL.createObjectURL(file);try{const im=await loadImg(url),k=Math.min(1,max/Math.max(im.naturalWidth,im.naturalHeight)),c=document.createElement('canvas');
+  c.width=Math.round(im.naturalWidth*k);c.height=Math.round(im.naturalHeight*k);c.getContext('2d').drawImage(im,0,0,c.width,c.height);return c.toDataURL('image/jpeg',0.82);}finally{URL.revokeObjectURL(url);}}
+async function addStudioFiles(list){const u=app.ui,p=proj(u.stuPid);if(!p||!canUpload(p.id))return;
+  const files=[...list].filter(f=>/^(image|video)\//.test(f.type)||/\.(jpe?g|png|webp|gif|mp4|mov|webm|m4v)$/i.test(f.name));
+  if(!files.length){toast('Choose JPG, PNG or WebP images, or MP4, MOV or WebM videos.');return;}
+  u.stuBusy=true;render();const recs=[],bad=[];
+  for(const f of files){const id=uid('d'),kind=fileKind(f.name,f.type);
+    const base={id,projectId:p.id,category:'creative',title:f.name.replace(/\.[^.]+$/,''),channel:u.stuChannel||'Meta',file:f.name,size:f.size,mime:f.type||(kind==='video'?'video/mp4':'image/jpeg'),uploadedBy:u.viewer,at:nowStamp(),note:'Added in the creative studio'};
+    try{if(kind==='video'){const v=await videoFrames(f);base.frames=v.frames;base.duration=Math.round(v.duration);const url=await Store.putFile(f);base.url=url||null;if(!url)BLOBS[id]=v.url;}
+      else{const url=await Store.putFile(f);base.url=url||await shrinkImage(f,1080);}recs.push(base);}catch(e){bad.push(f.name);}}
+  u.stuBusy=false;if(bad.length)toast(`Could not read ${bad.join(', ')}.`);if(!recs.length){render();return;}
+  u.studio=recs[0].id;u.stuFrame=0;u.gen=null;u.stuAI='';
+  await commit(d=>{d.docs=(d.docs||[]).concat(recs);},`Added ${recs.length} creative${recs.length>1?'s':''} in the creative studio for ${p.name}`,p.id);
+  if(Store.mode==='local'&&recs.some(r=>r.frames&&!r.url))toast('Video added. In this browser-only version the video plays until the page is reloaded; its frames and readings are kept.');
+  const sp=document.getElementById('studioPanel');if(sp&&sp.scrollIntoView)sp.scrollIntoView({block:'start'});}
+document.addEventListener('change',e=>{const el=e.target;if(!el||!el.dataset||!app.data)return;const c=el.dataset.change;
+  if(c==='stuFile'){e.stopImmediatePropagation();if(el.files&&el.files.length)addStudioFiles(el.files);}
+  else if(c==='stuChannel'){e.stopImmediatePropagation();app.ui.stuChannel=el.value;}},true);
+document.addEventListener('click',e=>{const el=e.target.closest&&e.target.closest('[data-act]');if(!el||!app.data)return;
+  if(el.dataset.act==='stuFrame'){app.ui.stuFrame=+el.dataset.v;delete STU[app.ui.studio];app.ui.stuAI='';render();}
+  else if(el.dataset.act==='stuPick')app.ui.stuFrame=0;},true);
+document.addEventListener('dragover',e=>{const d=e.target.closest&&e.target.closest('#stuDrop');if(d){e.preventDefault();d.classList.add('hot');}});
+document.addEventListener('dragleave',e=>{const d=e.target.closest&&e.target.closest('#stuDrop');if(d)d.classList.remove('hot');});
+document.addEventListener('drop',e=>{const d=e.target.closest&&e.target.closest('#stuDrop');if(d){e.preventDefault();d.classList.remove('hot');addStudioFiles(e.dataTransfer.files);}});
 
 /* ---------- render & events ---------- */
 function render(){
@@ -2766,3 +2810,5 @@ document.addEventListener('drop',e=>{const d=e.target.closest&&e.target.closest(
 })();
 })();
 </script>
+
+</body></html>

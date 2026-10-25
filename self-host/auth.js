@@ -93,7 +93,7 @@ module.exports = function makeAuth(DATA_DIR) {
     const V = visible(data, uid), me = (data.users || []).find(u => u.id === uid) || {}, out = { ...data };
     for (const k of LISTS) if (Array.isArray(data[k])) out[k] = data[k].filter(r => V.has(pidOf(k, r)));
     for (const [k, f] of Object.entries(KEYED)) if (data[k]) out[k] = Object.fromEntries(Object.entries(data[k]).filter(([key]) => V.has(f(key))));
-    if (data.creativeAI) { const ok = new Set((out.docs || []).map(d => d.id)); out.creativeAI = Object.fromEntries(Object.entries(data.creativeAI).filter(([id]) => ok.has(id))); }
+    if (data.creativeAI) { const ok = new Set((out.docs || []).map(d => d.id)); out.creativeAI = Object.fromEntries(Object.entries(data.creativeAI).filter(([id]) => ok.has(String(id).split('#')[0]))); }
     if (Array.isArray(data.audit)) { const team = subtree(data.users || [], uid);
       out.audit = data.audit.filter(a => me.role === 'L1' || (a.projectId ? V.has(a.projectId) : (['LEAD', 'AM'].includes(me.role) && a.by && team.has(a.by)))); }
     return out;
@@ -113,7 +113,8 @@ module.exports = function makeAuth(DATA_DIR) {
       out[k] = Object.fromEntries(keep.concat(mine));
     }
     { const docP = new Map((out.docs || []).map(d => [d.id, d.projectId]));
-      const keep = Object.entries(full.creativeAI || {}).filter(([id]) => !V.has(docP.get(id))), mine = Object.entries(incoming.creativeAI || {}).filter(([id]) => V.has(docP.get(id)));
+      const pd = id => docP.get(String(id).split('#')[0]);
+      const keep = Object.entries(full.creativeAI || {}).filter(([id]) => !V.has(pd(id))), mine = Object.entries(incoming.creativeAI || {}).filter(([id]) => V.has(pd(id)));
       out.creativeAI = Object.fromEntries(keep.concat(mine)); }
     if (role === 'L1') { out.users = incoming.users || full.users; out.example = incoming.example; }
     { const seen = new Set((full.audit || []).map(a => a.at + '|' + a.by + '|' + a.text));
