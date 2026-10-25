@@ -1011,7 +1011,7 @@ function teamView(){
   return `
   <div class="panel"><h2>What each level can do</h2>
     <div class="perm">
-      <div><strong>L1 · Board</strong><br>All projects and reports, read only, with the internal view of reports. Can add projects and team members, assign project owners, raise board comments and download or share any report. Does not edit budgets, project details or reviews.</div>
+      <div><strong>L1 · Board</strong><br>All projects and reports, read only, with the internal view of reports. Can add projects and team members, assign project owners, raise board comments, add creatives and save new versions in the Creative studio, and download or share any report. Does not edit budgets, project details or reviews.</div>
       <div><strong>Team Lead</strong><br>All projects and their reports. Can reallocate and manage projects within their own team.</div>
       <div><strong>Account Manager</strong><br>Only the projects they manage: their own and their executives'. Can reallocate within their team.</div>
       <div><strong>Sr Executive / Executive</strong><br>Only the projects assigned to them. Can upload data, plans, platform exports, presentations and creatives, and edit project details for those projects.</div>
@@ -2482,7 +2482,7 @@ function studioPanel(id){const u=app.ui;if(!id)return '';const doc=(D().docs||[]
   const where=pk=>{const v=pk.y<0.4?'upper':pk.y>0.6?'lower':'',h=pk.x<0.4?'left':pk.x>0.6?'right':'';return v&&h?v+' '+h:v?v+' middle':h?'middle '+h:'centre';};
   const seen=new Set(),gaze=st?peaks.slice(0,3).map(pk=>{const e=nearest(pk),k=e?e.type+'|'+e.text:where(pk);if(seen.has(k))return '';seen.add(k);return e?`<strong>${esc(ELABEL[e.type]||e.type)}</strong>${e.text?` · “${esc(String(e.text).slice(0,40))}”`:''}`:`<strong>${where(pk)}</strong> of the creative`;}).filter(Boolean).map((t,i)=>`<li>${i+1}. ${t}</li>`).join(''):'';
   const shareRows=els.length?Object.entries(els.reduce((a,e)=>{a[e.type]=(a[e.type]||0)+shareIn(st.S,e.cbox);return a;},{})).sort((a,b)=>b[1]-a[1]).map(([t,v])=>`<tr><td class="t">${esc(ELABEL[t]||t)}</td><td>${Math.round(v*100)}%</td></tr>`).join(''):'';
-  const sug=st?studioSuggestions(id,perf,avg):[];const canSave=!isBoard()&&scope().own.has(p.id);const g=u.gen;
+  const sug=st?studioSuggestions(id,perf,avg):[];const canSave=canStudio(p.id);const g=u.gen;
   return `<div class="panel studio-panel" id="studioPanel">
     <div class="panel-h"><div style="min-width:0"><strong style="overflow-wrap:anywhere">Creative studio · ${esc(doc.title)}</strong><span class="sub">${esc(p.name)}${row?` · ${inr(row.spend)} spend · ${num(row.leads)} leads${row.ql!=null?' · '+num(row.ql)+' QL':''}${perf&&perf.cost?` · ${avg.cn} ${inr(perf.cost)} (project ${inr(avg.cost)})`:''}`:''}</span></div><button class="btn" data-act="closeStudio">Back to all creatives</button></div>
     <div class="studio-b">
@@ -2519,7 +2519,7 @@ document.addEventListener('click',e=>{const el=e.target.closest&&e.target.closes
   else if(a==='stuAI'){runAI(u.studio).then(()=>setTimeout(paintStudio,0));}
   else if(a==='genStart'||a==='genReset'){const keep=u.gen;u.gen=genDefaults(u.studio);if(a==='genReset'&&keep){u.gen.layout=keep.layout;u.gen.size=keep.size;u.gen.imgSrc=keep.imgSrc;}render();setTimeout(paintStudio,0);}
   else if(a==='genDownload'){const cv=document.getElementById('genCanvas');if(!cv)return;cv.toBlob(b=>saveFile(`${(u.gen.brand||'creative').replace(/[^\w ]+/g,'')} - new ${GSIZE[u.gen.size][2].split(' ')[0]} ${u.gen.layout}.png`,b),'image/png');}
-  else if(a==='genSave'){const cv=document.getElementById('genCanvas'),doc=(D().docs||[]).find(d=>d.id===u.studio);if(!cv||!doc||isBoard()||!scope().own.has(doc.projectId))return;
+  else if(a==='genSave'){const cv=document.getElementById('genCanvas'),doc=(D().docs||[]).find(d=>d.id===u.studio);if(!cv||!doc||!canStudio(doc.projectId))return;
     cv.toBlob(async b=>{const name=`${doc.title} - new ${u.gen.layout} ${u.gen.size}`,f=new File([b],name+'.jpg',{type:'image/jpeg'});let url=await Store.putFile(f);
       if(!url){const sm=document.createElement('canvas');const k=Math.min(1,540/cv.width);sm.width=Math.round(cv.width*k);sm.height=Math.round(cv.height*k);sm.getContext('2d').drawImage(cv,0,0,sm.width,sm.height);url=sm.toDataURL('image/jpeg',0.82);}
       const rec={id:uid('d'),projectId:doc.projectId,category:'creative',title:name,channel:doc.channel||'Meta',file:name+'.jpg',size:b.size,mime:'image/jpeg',url,uploadedBy:u.viewer,at:nowStamp(),note:'Made in the creative studio from '+doc.title};
@@ -2545,7 +2545,7 @@ function studioTab(){const u=app.ui,vis=visibleProjects(),withC=vis.filter(p=>st
   const pick=`<div class="qf"><div class="field qf-p"><label for="stuProj">Project</label><select id="stuProj" data-change="stuProj">${vis.map(x=>`<option value="${x.id}" ${x.id===p.id?'selected':''}>${esc(x.name)} (${studioDocs(x.id).length} creative${studioDocs(x.id).length===1?'':'s'})</option>`).join('')}</select></div>
     <div class="field"><label for="stuSort">Sort by</label><select id="stuSort" data-change="stuSort">${[['spend','Spend'],['score','Attention score'],['cost',useQ?'CPQL (lowest first)':'CPL (lowest first)'],['name','Name']].map(([k,l])=>`<option value="${k}" ${k===sort?'selected':''}>${l}</option>`).join('')}</select></div>
 </div>
-    ${canUpload(p.id)?`<div class="panel stu-up"><div class="panel-h"><div><h2>Add creatives</h2><span class="muted" style="font-size:.8rem">Statics (JPG, PNG, WebP) or videos (MP4, MOV, WebM) for ${esc(p.name)}. No performance data is needed: the heatmap, AI reading and new version work on the creative alone.</span></div>
+    ${canStudio(p.id)?`<div class="panel stu-up"><div class="panel-h"><div><h2>Add creatives</h2><span class="muted" style="font-size:.8rem">Statics (JPG, PNG, WebP) or videos (MP4, MOV, WebM) for ${esc(p.name)}. No performance data is needed: the heatmap, AI reading and new version work on the creative alone.</span></div>
         <div class="field" style="min-width:140px"><label for="stuChannel">Channel</label><select id="stuChannel" data-change="stuChannel">${['Meta','Google','YouTube','LinkedIn','Other'].map(c=>`<option ${(u.stuChannel||'Meta')===c?'selected':''}>${c}</option>`).join('')}</select></div></div>
       <label class="drop" id="stuDrop" for="stuFile"><strong>${u.stuBusy?'Reading creatives…':'Choose or drop statics and videos'}</strong><span class="muted" style="font-size:.85rem">Several at once is fine. Videos are read at the hook (about 1 s), at 3 s and in the middle.</span>
         <input id="stuFile" type="file" accept="image/*,video/*,.mp4,.mov,.webm,.m4v" multiple data-change="stuFile" style="max-width:100%" ${u.stuBusy?'disabled':''}></label></div>`:''}`;
@@ -2558,7 +2558,7 @@ function studioTab(){const u=app.ui,vis=visibleProjects(),withC=vis.filter(p=>st
       <td>${x.sc?`<strong>${x.sc.overall}</strong>`:'…'}</td><td>${x.sc?x.sc.focus:'…'}</td><td>${x.sc?x.sc.clutter:'…'}</td>
       <td>${x.r?inr(x.r.spend):'—'}</td><td>${x.r?num(x.r.leads):'—'}</td>${useQ?`<td>${x.r&&x.r.ql!=null?num(x.r.ql):'—'}</td>`:''}<td>${x.cost?inr(x.cost):'—'}</td>
       <td class="t l"><span class="btn link">${u.studio===x.d.id?'Open':'Heatmap and new version'}</span></td></tr>`).join('')}</tbody></table></div>${corr}`
-    :`<div class="empty">No image creatives for ${esc(p.name)} yet.${canUpload(p.id)?' Upload the creative files (JPG or PNG) and they appear here.':''}</div>`;
+    :`<div class="empty">No creatives for ${esc(p.name)} yet.${canStudio(p.id)?' Add statics or videos above and they appear here.':''}</div>`;
   return `<div class="head-row"><div><h2 style="font-size:1.5rem">Creative studio</h2><span class="muted" style="font-size:.85rem">Predicted attention heatmaps, an AI reading of each creative, suggestions, and a new version to test. Pick a creative to start.</span></div></div>
     ${pick}${u.studio?studioPanel(u.studio):''}
     <div class="panel"><div class="panel-h"><div><h2>Creatives · ${esc(p.name)}</h2><span class="muted" style="font-size:.8rem">Attention scores are predicted from the image; results come from the uploaded platform exports for the selected period</span></div></div>${table}</div>`;}
@@ -2620,6 +2620,7 @@ function accountsPanel(){if(!authed())return '';const v=viewer();if(!['L1','LEAD
     <div class="tw" style="border:0"><table><thead><tr><th class="l">Person</th><th class="l">Username</th><th class="l">Status</th><th class="l"></th></tr></thead><tbody>${rows}</tbody></table></div></div>`;}
 
 /* ---------- creative studio uploads ---------- */
+const canStudio=pid=>canUpload(pid)||(isBoard()&&visibleProjects().some(p=>p.id===pid));
 async function videoFrames(file){const url=URL.createObjectURL(file),v=document.createElement('video');v.muted=true;v.playsInline=true;v.preload='auto';v.src=url;
   await new Promise((ok,bad)=>{v.onloadeddata=ok;v.onerror=()=>bad(new Error('video'));setTimeout(()=>bad(new Error('timeout')),20000);});
   const dur=isFinite(v.duration)?v.duration:0,ts=[Math.min(1,dur*0.15),Math.min(3,dur*0.35),dur/2].map(t=>Math.max(0,Math.min(Math.max(0,dur-0.05),t)));
@@ -2628,7 +2629,7 @@ async function videoFrames(file){const url=URL.createObjectURL(file),v=document.
   return {frames,duration:dur,url};}
 async function shrinkImage(file,max){const url=URL.createObjectURL(file);try{const im=await loadImg(url),k=Math.min(1,max/Math.max(im.naturalWidth,im.naturalHeight)),c=document.createElement('canvas');
   c.width=Math.round(im.naturalWidth*k);c.height=Math.round(im.naturalHeight*k);c.getContext('2d').drawImage(im,0,0,c.width,c.height);return c.toDataURL('image/jpeg',0.82);}finally{URL.revokeObjectURL(url);}}
-async function addStudioFiles(list){const u=app.ui,p=proj(u.stuPid);if(!p||!canUpload(p.id))return;
+async function addStudioFiles(list){const u=app.ui,p=proj(u.stuPid);if(!p||!canStudio(p.id))return;
   const files=[...list].filter(f=>/^(image|video)\//.test(f.type)||/\.(jpe?g|png|webp|gif|mp4|mov|webm|m4v)$/i.test(f.name));
   if(!files.length){toast('Choose JPG, PNG or WebP images, or MP4, MOV or WebM videos.');return;}
   u.stuBusy=true;render();const recs=[],bad=[];

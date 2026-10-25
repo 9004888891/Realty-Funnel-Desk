@@ -148,7 +148,7 @@ From the team sheet: **L1** Viresh. **Team Leads** Iliyas Shaikh, Neha Singh, Th
 
 | Role | Sees | Can do |
 |---|---|---|
-| L1 · Board | All projects, read only: month on month, funds under management, utilisation, projects at risk, open board comments, drill-down, every file; reports open in the internal view | Add projects and team members, assign project owners, post and resolve board comments, download or share reports, manage data. Cannot upload, edit budgets, project details, reviews or ad set locations (blocked in the page; enforce on the server before go-live) |
+| L1 · Board | All projects, read only: month on month, funds under management, utilisation, projects at risk, open board comments, drill-down, every file; reports open in the internal view | Add projects and team members, assign project owners, post and resolve board comments, add creatives and save new versions in the Creative studio, download or share reports, manage data. Cannot upload, edit budgets, project details, reviews or ad set locations (blocked in the page; enforce on the server before go-live) |
 | Team Leader | All projects and their reports (other teams' projects are view only) | Reallocate within their team, add projects, record money |
 | Account Manager | Only the projects they manage: their own and their executives' | Reallocate within their team, add projects, record money |
 | Sr / Jr Executive | Only projects assigned to them | Upload Excel data, plans, platform exports, presentations and creatives; edit project details and analyst comments; create client reports — for those projects |
