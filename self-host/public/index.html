@@ -1051,8 +1051,8 @@ function teamView(){
     <span class="muted" style="font-size:.85rem">${Store.mode==='server'?'Data is stored on your server and shared with everyone who opens this dashboard.':'In this preview, data is kept in this browser only. Host it on your server to share it across the team.'}</span>
     <div class="actions"><button class="btn" data-act="export">Export data (JSON)</button><button class="btn" data-act="copyJson">Copy data to clipboard</button>
       <label class="btn" for="importFile" style="display:inline-flex;align-items:center">Import data (JSON)<input id="importFile" type="file" accept=".json" data-change="import" hidden></label>
-      ${D().example?`<button class="btn" data-act="clearExample">Clear example data</button>`:''}<button class="btn" data-act="resetExample">Reload example data</button></div>
-    ${app.ui.confirm?`<div class="note" style="background:var(--warn-soft)"><span>${app.ui.confirm==='clear'?'Remove the example projects and their data? Team members and projects loaded from your own files (Ten X District 9) are kept.':'Replace all current data with the example data? Ten X District 9 is loaded again from its files.'}</span><span class="actions"><button class="btn primary" data-act="confirmYes">Yes, continue</button><button class="btn" data-act="confirmNo">Cancel</button></span></div>`:''}
+      ${authed()?'':`${D().example?`<button class="btn" data-act="clearExample">Clear example data</button>`:''}<button class="btn" data-act="resetExample">Load example data (demo)</button>`}</div>
+    ${app.ui.confirm?`<div class="note" style="background:var(--warn-soft)"><span>${app.ui.confirm==='clear'?'Remove the example projects and their data? Team members and projects loaded from your own files (Ten X District 9) are kept.':'Replace everything in this browser with the example projects and the Ten X District 9 sample? Anything added here is removed.'}</span><span class="actions"><button class="btn primary" data-act="confirmYes">Yes, continue</button><button class="btn" data-act="confirmNo">Cancel</button></span></div>`:''}
   </div>`:''}`;
 }
 
@@ -2656,6 +2656,9 @@ document.addEventListener('dragleave',e=>{const d=e.target.closest&&e.target.clo
 document.addEventListener('drop',e=>{const d=e.target.closest&&e.target.closest('#stuDrop');if(d){e.preventDefault();d.classList.remove('hot');addStudioFiles(e.dataTransfer.files);}});
 
 /* ---------- first-time setup on a new server, team members by Leads / AMs, problem reports ---------- */
+function demoData(){const data=seed();applyRoster(data);['docs','raws','crm','shares','boardNotes','feedback'].forEach(k=>{if(!data[k])data[k]=[];});['profiles','notes','reviews','creativeAI'].forEach(k=>{if(!data[k])data[k]={};});
+  injectTenx(data);upgradeTenx(data);upgradeTenxDetails(data);data.boardSeeded=true;
+  if(data.projects.some(p=>p.id==='tenx9'))data.boardNotes.push({id:'bc-sample',projectId:'tenx9',by:'u1',at:'2026-10-14T11:20:00',text:'Sample board comment: CPQL went up in September. What is changing in October to bring it down, and should budget move between Google and Meta?',replies:[],done:false});return data;}
 function emptyData(){return {users:ROSTER.map(([id,name,role,reportsTo])=>({id,name,role,reportsTo})),projects:[],money:[],blocks:[],plans:[],reports:[],docs:[],raws:[],crm:[],profiles:{},notes:{},reviews:{},
   audit:[{at:nowStamp(),by:'u1',text:'Dashboard set up with an empty start',projectId:null}],shares:[],boardNotes:[],feedback:[],creativeAI:{},roster:ROSTER_V,boardSeeded:true,example:false};}
 function setupScreen(){const u=app.ui,acc=u.setupDone;
@@ -2674,7 +2677,7 @@ function setupScreen(){const u=app.ui,acc=u.setupDone;
     <button class="btn primary" type="submit" ${u.authBusy?'disabled':''}>${u.authBusy?'Creating accounts…':'Create accounts'}</button></form>`);}
 document.addEventListener('submit',async e=>{const f=e.target;if(!f||f.id!=='setupForm')return;e.preventDefault();const u=app.ui;
   const keyVal=(f.querySelector('#stKey')||{}).value,demo=!!(f.querySelector('#stDemo')||{}).checked;u.authErr='';u.authBusy=true;render();
-  let data;if(demo){data=seed();applyRoster(data);['docs','raws','crm','shares','boardNotes'].forEach(k=>{if(!data[k])data[k]=[];});['profiles','notes','reviews','creativeAI'].forEach(k=>{if(!data[k])data[k]={};});injectTenx(data);upgradeTenx(data);upgradeTenxDetails(data);data.boardSeeded=true;}
+  let data;if(demo){data=demoData();}
   else data=emptyData();
   try{const r=await fetch('api/state',{method:'PUT',headers:{'Content-Type':'application/json','If-Match':'0',...(keyVal!=null?{'X-Setup-Key':keyVal}:{})},body:JSON.stringify(data)});const j=await r.json().catch(()=>({}));
     if(r.ok){u.setupDone=j.accounts||[];u.authBusy=false;render();return;}u.authErr=r.status===409?'The dashboard has already been set up. Reload the page to sign in.':j.error||'Setup failed.';}
@@ -2820,7 +2823,7 @@ document.addEventListener('click',e=>{
         d.projects=d.projects.filter(p=>keep.has(p.id));['plans','reports','money','docs','blocks','raws','crm','shares'].forEach(n=>{d[n]=(d[n]||[]).filter(k);});
         ['profiles','notes'].forEach(n=>{const o={};Object.keys(d[n]||{}).forEach(id=>{if(keep.has(id))o[id]=d[n][id];});d[n]=o;});
         const rv={};Object.keys(d.reviews||{}).forEach(key=>{if(keep.has(key.split('|')[0]))rv[key]=d.reviews[key];});d.reviews=rv;d.example=false;},'Cleared example projects');
-      else{app.data=seed();['crm'].forEach(k=>app.data[k]=[]);app.data.reviews={};injectTenx(app.data);upgradeTenx(app.data);commit(()=>{},'Reloaded example data');}break;}
+      else{app.data=demoData();commit(()=>{},'Loaded example data');}break;}
   }
 });
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&app.ui.viewDoc){app.ui.viewDoc=null;render();return;}if(e.key==='Enter'&&e.target.matches('tr[data-act]')){e.target.click();}});
@@ -2861,17 +2864,20 @@ document.addEventListener('drop',e=>{const d=e.target.closest&&e.target.closest(
   const gate=await authCheck();if(gate.stop){render();return;}
   if(app.setup){app.gate=()=>setupScreen();render();return;}
   const data=await Store.init();
-  app.data=data&&data.users?data:seed();
+  // Browser-only version (Vercel, review link): start empty, and clear what earlier versions stored here, once
+  let fresh=false;const CLEAN_KEY='rfd-clean-start-2026-10-26',lsGet=k=>{try{return localStorage.getItem(k);}catch(e){return null;}};
+  if(Store.mode==='local'&&!lsGet(CLEAN_KEY)){app.data=emptyData();fresh=true;try{localStorage.setItem(CLEAN_KEY,'1');}catch(e){}}
+  else app.data=data&&data.users?data:emptyData();
   if(!app.data.docs)app.data.docs=[];if(!app.data.feedback)app.data.feedback=[];
   if(!app.data.blocks)app.data.blocks=[];
   ['raws','shares','crm'].forEach(k=>{if(!app.data[k])app.data[k]=[];});['profiles','notes','reviews'].forEach(k=>{if(!app.data[k])app.data[k]={};});if(!app.data.boardNotes)app.data.boardNotes=[];
   const rosterChanged=applyRoster(app.data);
-  const loadedTenx=injectTenx(app.data)|upgradeTenx(app.data)|upgradeTenxDetails(app.data)|rosterChanged;
+  const loadedTenx=(app.data.example!==false?injectTenx(app.data):false)|upgradeTenx(app.data)|upgradeTenxDetails(app.data)|rosterChanged;
   if(!app.data.boardSeeded&&app.data.projects.some(p=>p.id==='tenx9')){const l1=app.data.users.find(x=>x.role==='L1');app.data.boardSeeded=true;app._seeded=true;if(l1)app.data.boardNotes.push({id:'bc-sample',projectId:'tenx9',by:l1.id,at:'2026-10-14T11:20:00',text:'Sample board comment: CPQL went up in September. What is changing in October to bring it down, and should budget move between Google and Meta?',replies:[],done:false});}
   try{const v=localStorage.getItem(LS_VIEW);if(v&&app.data.users.some(u=>u.id===v))app.ui.viewer=v;}catch(e){}
   if(!app.data.users.some(u=>u.id===app.ui.viewer))app.ui.viewer=app.data.users[0].id;
   if(authed()){app.ui.viewer=app.auth.userId;if(app.auth.mustChange)app.gate=()=>passwordScreen(true);}
-  if(!data||loadedTenx||app._seeded)await Store.save(app.data);
+  if(!data||fresh||loadedTenx||app._seeded)await Store.save(app.data);
   if(app.setup){app.ui.authMsg='Setup complete. Every team member now has a sign-in account; the temporary passwords are in data/initial-passwords.txt on the server.';app.gate=()=>loginScreen();render();return;}
   render();
   setInterval(async()=>{if(saving)return;const fresh=await Store.poll();if(fresh){const typing=document.activeElement&&(/INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)||app.ui.editProfile||app.ui.editReview);app.data=fresh;if(!typing)render();}},30000);
