@@ -2781,6 +2781,10 @@ document.addEventListener('click',async e=>{const el=e.target.closest&&e.target.
     try{await commit(rmMut,rmText);if(D().users.some(x=>x.id===id)&&okTo())await commit(rmMut,rmText);}catch(err){}
     u.rmBusy=false;u.rmUser=null;app.accounts=null;render();
     toast(D().users.some(x=>x.id===id)?t.name+' could not be removed. Reload and try again.':t.name+' removed.');}},true);
+/* ---------- browser-only version: say so plainly ---------- */
+function localBanner(){if(Store.mode!=='local'||authed())return '';let off=false;try{off=sessionStorage.getItem('rfd-local-note')==='1';}catch(e){}if(off)return '';
+  return `<div class="note" role="status" style="max-width:1280px;margin:10px auto 0;background:var(--warn-soft);align-items:flex-start"><span><strong>Preview version: no sign-in, nothing is shared.</strong> Anything added here is saved only in this browser on this computer. Teammates opening this link see their own empty copy and cannot see your projects or uploads. For the team trial, use the team link with sign-in that your admin shares.</span><button class="btn link" data-act="localNoteOff" style="white-space:nowrap">Hide</button></div>`;}
+document.addEventListener('click',e=>{const el=e.target.closest&&e.target.closest('[data-act="localNoteOff"]');if(!el)return;try{sessionStorage.setItem('rfd-local-note','1');}catch(err){}render();});
 /* ---------- render & events ---------- */
 function render(){
   MEMO={};
@@ -2790,7 +2794,7 @@ function render(){
   if(app.ui.tab==='upload'&&viewer().role==='L1')app.ui.tab='overview';
   const t=app.ui.tab;
   const rp=app.ui.report&&visibleProjects().some(p=>p.id===app.ui.report);
-  root.innerHTML=header()+`<main>${rp?reportView(app.ui.report):t==='overview'?overview():t==='upload'?uploadView():t==='repo'?repoView():t==='studio'?studioTab():teamView()}</main>`+modal()+dataModal()+studioModal()+feedbackModal()+removeModal();
+  root.innerHTML=header()+localBanner()+`<main>${rp?reportView(app.ui.report):t==='overview'?overview():t==='upload'?uploadView():t==='repo'?repoView():t==='studio'?studioTab():teamView()}</main>`+modal()+dataModal()+studioModal()+feedbackModal()+removeModal();
   if(app.ui.studio&&app.ui.tab==='studio')setTimeout(paintStudio,0);
   if(app.ui.tab==='studio')setTimeout(scoreAllCreatives,0);
   if(focusId){const el=document.getElementById(focusId);if(el&&el.focus){el.focus();if(el.type==='search'){const n=el.value.length;try{el.setSelectionRange(n,n);}catch(e){}}}}
