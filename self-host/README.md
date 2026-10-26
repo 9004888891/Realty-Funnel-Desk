@@ -126,16 +126,37 @@ Uploads are limited to 500 MB per file by default (`MAX_UPLOAD_MB=1000 node serv
 - **Report freshness:** each project has a cadence (daily, weekly, monthly). Up to date ≤ cadence + 1 day since the last report's end date; Update due ≤ 2× cadence + 1; Overdue after that.
 - **Costs** (CPL, CPQL, CPSV, CPB, CPC) are recalculated from spend and counts, never read from the file.
 
+## Running the team trial (live, with sign-in)
+
+The trial needs the **server version** (this folder) running online, because everyone must share one set of data. The Vercel / review-link copies keep data in each person's browser and have no passwords.
+
+**1. Put it online** (any one of these):
+- **Your own server or VPS:** install Node.js 18+, copy this folder, run `SETUP_KEY=choose-a-long-secret node server.js` behind HTTPS (nginx or Caddy), with `COOKIE_SECURE=1`.
+- **Docker** (any cloud that runs containers): build the included `Dockerfile` and mount a **persistent volume at `/data`**. Set `SETUP_KEY`.
+- **Render:** the GitHub repository includes `render.yaml`. In Render choose New → Blueprint → this repository. It creates the web service with a 1 GB persistent disk and a generated `SETUP_KEY` (find it under the service's Environment). A persistent disk needs a paid instance type.
+- Without a persistent disk or volume, all data and accounts are lost on every restart or redeploy.
+
+**2. Set it up (once):** open the address, enter the `SETUP_KEY`, choose **An empty dashboard**, and click **Create accounts**. The 21 usernames and temporary passwords are shown once: download the CSV and give each Team Lead their team's details. (They are also saved in `data/initial-passwords.txt`.)
+
+**3. Team Leads take over:** each Lead signs in, sets a password, then in **Team & access**:
+- **Add a project** for each live project and choose its owner;
+- **Add a team member** for anyone not yet in the list; their username and first temporary password appear straight away to pass on;
+- **Reset password** for anyone locked out.
+
+**4. The team works as normal:** executives sign in, open **Upload**, drop their weekly / monthly Excel, platform exports, CRM files and creatives, check what was detected and click **Save**. Leads and L1 check the dashboard, reports and Creative studio.
+
+**5. Report problems from inside the dashboard:** **Report a problem** (top right, on every page) records who, where, when and what. L1 and Team Leads see all reports under Team & access → Problems reported, can mark them fixed and download them as CSV. Send that CSV (and, if useful, L1's **Export data (JSON)**) back for fixes.
+
 ## Sign-in (self-hosted version)
 
 Each person signs in with a username and password; their role decides what the **server** sends them, so nobody can see another team's projects even by looking at the network traffic.
 
-- **First start:** start the server (`node server.js`) and open the dashboard once in a browser straight away. It loads the data and creates an account for every team member. The usernames and **temporary passwords** are written to `data/initial-passwords.txt` (also mentioned in the server log). Hand them out, then delete the file.
+- **First start:** set `SETUP_KEY` and open the dashboard. The setup screen asks for the key, lets you start empty or with example data, creates an account for every team member and shows the usernames and **temporary passwords** once (also written to `data/initial-passwords.txt`). Hand them out, then delete the file. Without `SETUP_KEY`, whoever opens a new server first can run setup, so always set it on a server others can reach.
 - **Usernames** are the name in lower case with dots: `viresh`, `thomas.joseph`, `manik.jayee`.
 - **First sign-in:** everyone must replace the temporary password with their own (at least 8 characters).
 - **Forgotten passwords:** Team & access → Sign-in accounts. L1 can reset anyone; Team Leads and AMs can reset people in their own team. The new temporary password is shown once, and the person is signed out everywhere else.
-- **New team members** added in Team & access get an account automatically; reset their password there to get their first temporary password.
-- **What the server enforces:** sign-in for all data and files; each person only receives their projects (L1 and Team Leads: all; AMs: their team's; executives: their assigned projects); saves can only change records of projects the person can see; only L1 can change the team list; files of other projects are refused. Five wrong passwords lock that username for 15 minutes from that address. Sessions last 7 days (`SESSION_DAYS`).
+- **New team members:** L1 can add anyone; Team Leads add people to their own team (AMs, Sr Executives, Executives) and AMs add executives to theirs. The new person's username and first temporary password appear straight away.
+- **What the server enforces:** sign-in for all data and files; each person only receives their projects (L1 and Team Leads: all; AMs: their team's; executives: their assigned projects); saves can only change records of projects the person can see; only L1 can change the whole team list (Leads and AMs can only add people to their own team); files of other projects are refused. Five wrong passwords lock that username for 15 minutes from that address. Sessions last 7 days (`SESSION_DAYS`).
 - **Use HTTPS** in front of the server (for example nginx or Caddy with a certificate) and set `COOKIE_SECURE=1`.
 - `AUTH=off node server.js` turns sign-in off for a private demo on your own computer.
 - The Vercel / review-link version has no server, so it keeps the **demo picker** ("Viewing as · demo, no passwords"); use Vercel's Deployment Protection there.

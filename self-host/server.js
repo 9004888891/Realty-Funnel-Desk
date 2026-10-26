@@ -74,7 +74,7 @@ http.createServer(async (req, res) => {
     if (p === '/api/logout' && req.method === 'POST') { res.setHeader('Set-Cookie', Auth.logout(req)); return send(res, 200, { ok: true }); }
     if (p === '/api/me') {
       if (!AUTH_ON) return send(res, 200, { auth: false });
-      if (!state.data) return send(res, 200, { setup: true });
+      if (!state.data) return send(res, 200, { setup: true, key: !!process.env.SETUP_KEY });
       return uid ? send(res, 200, { auth: true, ...Auth.me(uid) }) : send(res, 401, { error: 'Sign in' });
     }
     const firstSetup = AUTH_ON && !state.data && p === '/api/state';
@@ -97,14 +97,17 @@ http.createServer(async (req, res) => {
         return send(res, 200, AUTH_ON && state.data ? { version: state.version, data: Auth.filterState(state.data, uid) } : state);
       }
       if (req.method === 'PUT') {
+        const raw = await readBody(req, 50 * 1024 * 1024);   // always read the body, so the connection stays usable
+        if (firstSetup && process.env.SETUP_KEY && req.headers['x-setup-key'] !== process.env.SETUP_KEY) return send(res, 403, { error: 'The setup key is wrong.' });
         const seen = +(req.headers['if-match'] || -1);
-        if (seen !== state.version) return send(res, 409, state);
-        const data = JSON.parse((await readBody(req, 50 * 1024 * 1024)).toString('utf8'));
+        if (seen !== state.version) return send(res, 409, AUTH_ON && state.data ? { version: state.version, data: Auth.filterState(state.data, uid) } : state);
+        const data = JSON.parse(raw.toString('utf8'));
         if (!data || !Array.isArray(data.users) || !Array.isArray(data.projects)) return send(res, 400, { error: 'Invalid data' });
         const merged = AUTH_ON && state.data ? Auth.mergeState(state.data, data, uid) : data;
         state = { version: state.version + 1, data: merged };
         persist();
-        if (AUTH_ON) Auth.syncAccounts(state.data, console.log);
+        const created = AUTH_ON ? Auth.syncAccounts(state.data, console.log) : [];
+        if (firstSetup) return send(res, 200, { version: state.version, accounts: created });
         return send(res, 200, { version: state.version });
       }
     }

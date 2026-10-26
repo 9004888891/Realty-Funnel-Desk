@@ -125,6 +125,7 @@ tr.total td{font-weight:600;background:var(--surface2)}
 .who{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
 .rolechip{font-size:.68rem;text-transform:uppercase;letter-spacing:.06em;font-weight:600;color:var(--muted)}
 .empty{padding:28px;text-align:center;color:var(--muted)}
+.auth-card.wide{width:min(760px,100%)}.fb-link{margin-left:auto;align-self:center;font-size:.85rem;white-space:nowrap}
 .stu-up .drop{padding:14px}.thumbbtn{position:relative}.vbadge{position:absolute;left:3px;bottom:3px;background:rgba(0,0,0,.7);color:#fff;font-size:10px;line-height:1;padding:3px 4px;border-radius:4px}
 .auth-wrap{min-height:100vh;display:flex;align-items:center;justify-content:center;padding:24px 16px;background:var(--bg)}.auth-card{width:min(400px,100%);background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:26px 24px}.auth-form{display:flex;flex-direction:column;gap:12px}.auth-form h2{margin:4px 0 0}.auth-form .field{display:flex;flex-direction:column;gap:4px}.auth-form input{width:100%}
 .studio-panel{border-color:var(--accent)}.studio-panel .studio-b{display:flex;flex-direction:column;gap:16px}tr.sel td{background:var(--surface2)}
@@ -589,7 +590,7 @@ function header(){
     ${authed()?`<div class="ctl"><span class="label">Signed in</span><div class="ctl-row"><strong style="font-weight:600">${esc(v.name)}</strong><span class="rolechip">${ROLE[v.role].label}</span><button class="btn link" data-act="changePw">Password</button><button class="btn link" data-act="signOut">Sign out</button></div></div>`:`    <div class="ctl"><label class="label" for="viewer">Viewing as (demo · no passwords)</label><select id="viewer" data-change="viewer">${opts}</select></div>`}
     <div class="ctl"><span class="label">Report period</span><div class="ctl-row"><input type="date" id="from" aria-label="Start date" data-change="from" value="${u.from}"><span class="muted">to</span><input type="date" id="to" aria-label="End date" data-change="to" value="${u.to}">${u.from||u.to?`<button class="btn link" data-act="clearDates">All time</button>`:''}</div></div>
   </div>
-  <div class="tabs" role="tablist">${tabs.map(([k,l])=>`<button class="tab" role="tab" aria-selected="${u.tab===k}" data-act="tab" data-v="${k}">${l}</button>`).join('')}</div></div>`;
+  <div class="tabs" role="tablist">${tabs.map(([k,l])=>`<button class="tab" role="tab" aria-selected="${u.tab===k}" data-act="tab" data-v="${k}">${l}</button>`).join('')}<button class="btn link fb-link" data-act="fbOpen">Report a problem</button></div></div>`;
 }
 
 /* ---------- dashboard ---------- */
@@ -598,7 +599,7 @@ function overview(){
   if(u.project&&visibleProjects().some(p=>p.id===u.project)){noteRecent(u.project);return quickFilters()+projectView(proj(u.project));}
   const s=scope();
   let ps=visibleProjects();
-  if(!ps.length)return `<div class="panel empty">No projects are assigned to ${esc(viewer().name)} yet. A Lead or Account Manager can assign one from Team & access.</div>`;
+  if(!ps.length)return isManager()?`<div class="panel empty">No projects yet. ${viewer().role==='L1'?'Add the first project':'Add your team\'s first project'} from <button class="btn link" data-act="tab" data-v="team">Team &amp; access → Add a project</button>, and choose who owns it.</div>`:`<div class="panel empty">No projects are assigned to ${esc(viewer().name)} yet. Your Account Manager or Team Lead can assign one from Team & access.</div>`;
   if(u.loc&&!ps.some(p=>p.location===u.loc)){u.loc=null;u.brand=null;}
   if(u.brand&&!ps.some(p=>p.brand===u.brand&&(!u.loc||p.location===u.loc)))u.brand=null;
   if(u.loc)ps=ps.filter(p=>p.location===u.loc);
@@ -1014,11 +1015,13 @@ function teamView(){
   <div class="panel"><h2>What each level can do</h2>
     <div class="perm">
       <div><strong>L1 · Board</strong><br>All projects and reports, read only, with the internal view of reports. Can add projects and team members, assign project owners, raise board comments, add creatives and save new versions in the Creative studio, and download or share any report. Does not edit budgets, project details or reviews.</div>
-      <div><strong>Team Lead</strong><br>All projects and their reports. Can reallocate and manage projects within their own team.</div>
-      <div><strong>Account Manager</strong><br>Only the projects they manage: their own and their executives'. Can reallocate within their team.</div>
+      <div><strong>Team Lead</strong><br>All projects and their reports. Adds projects and team members, reallocates projects and resets passwords within their own team.</div>
+      <div><strong>Account Manager</strong><br>Only the projects they manage: their own and their executives'. Adds executives, reallocates projects and resets passwords within their team.</div>
       <div><strong>Sr Executive / Executive</strong><br>Only the projects assigned to them. Can upload data, plans, platform exports, presentations and creatives, and edit project details for those projects.</div>
     </div></div>
   ${accountsPanel()}
+  ${memberForm()}
+  ${feedbackPanel()}
   <div class="grid2">
     <div class="panel"><h2>${exec?'Your reporting line':v.role==='L1'?'Team structure':'Your team'}</h2><ul class="tree">${treeHtml}</ul></div>
     <div class="panel"><h2>Recent activity</h2>${audit.length?`<div class="tw" style="border:0"><table><tbody>${audit.map(a=>`<tr><td class="t">${fmtDT(a.at)}</td><td class="t l">${esc(user(a.by)?.name||'—')}</td><td class="t l" style="white-space:normal">${esc(a.text)}</td></tr>`).join('')}</tbody></table></div>`:'<div class="empty">No activity yet.</div>'}</div>
@@ -2573,7 +2576,7 @@ const authed=()=>!!(app.auth&&app.auth.auth);
 async function authCheck(){try{const r=await fetch('api/me',{cache:'no-store'});
     if(r.status===401){app.gate=()=>loginScreen();return {stop:true};}
     const ct=r.headers.get('content-type')||'';if(!r.ok||!ct.includes('json'))return {};
-    const j=await r.json();if(j.setup){app.setup=true;return {};}if(j.auth){app.auth=j;}return {};}catch(e){return {};}}
+    const j=await r.json();if(j.setup){app.setup=true;app.setupKey=!!j.key;return {};}if(j.auth){app.auth=j;}return {};}catch(e){return {};}}
 function shell(inner){return `<div class="auth-wrap"><div class="auth-card"><div class="brand" style="margin-bottom:6px"><h1>Realty Funnel Desk</h1></div>${inner}</div></div>`;}
 function loginScreen(){const u=app.ui;return shell(`<form id="loginForm" class="auth-form" autocomplete="on">
     <h2>Sign in</h2>${u.authMsg?`<div class="ok-msg">${esc(u.authMsg)}</div>`:''}${u.authErr?`<div class="err" role="alert">${esc(u.authErr)}</div>`:''}
@@ -2618,7 +2621,7 @@ function accountsPanel(){if(!authed())return '';const v=viewer();if(!['L1','LEAD
       <td class="t l">${a.mustChange?'<span class="chip due">Temporary password</span>':'<span class="chip ok">Own password set</span>'}${a.lastLogin?`<span class="sub">Last sign-in ${fmtDT(a.lastLogin.slice(0,16))}</span>`:'<span class="sub">Not signed in yet</span>'}</td>
       <td class="t l">${a.userId===v.id?'<button class="btn link" data-act="changePw">Change my password</button>':app.ui.confirmReset===a.userId?`<button class="btn link" style="color:var(--bad)" data-act="acctReset" data-v="${a.userId}">Confirm reset</button>`:`<button class="btn link" data-act="acctReset" data-v="${a.userId}">Reset password</button>`}</td></tr>`;}).join('');
   return `<div class="panel"><div class="panel-h"><div><h2>Sign-in accounts</h2><span class="muted" style="font-size:.8rem">${v.role==='L1'?'Everyone':'Your team'}. Resetting gives a temporary password; the person sets their own at the next sign-in and is signed out everywhere else.</span></div></div>
-    ${np?`<div class="note" style="flex-direction:column;align-items:stretch"><span><strong>New temporary password for ${esc(user(np.id)?.name||'')}</strong> (shown once):</span><pre class="cols" style="margin:6px 0">Username: ${esc(np.username)}\nTemporary password: ${esc(np.password)}</pre><span class="actions"><button class="btn" data-act="acctCopy">Copy sign-in details</button><button class="btn" data-act="acctDone">Done</button></span></div>`:''}
+    ${np?`<div class="note" style="flex-direction:column;align-items:stretch"><span><strong>New temporary password for ${esc(user(np.id)?.name||'')}</strong> (shown once):</span><div class="cols" style="margin:6px 0">Username: <strong>${esc(np.username)}</strong><br>Temporary password: <strong>${esc(np.password)}</strong></div><span class="actions"><button class="btn" data-act="acctCopy">Copy sign-in details</button><button class="btn" data-act="acctDone">Done</button></span></div>`:''}
     <div class="tw" style="border:0"><table><thead><tr><th class="l">Person</th><th class="l">Username</th><th class="l">Status</th><th class="l"></th></tr></thead><tbody>${rows}</tbody></table></div></div>`;}
 
 /* ---------- creative studio uploads ---------- */
@@ -2654,6 +2657,71 @@ document.addEventListener('dragover',e=>{const d=e.target.closest&&e.target.clos
 document.addEventListener('dragleave',e=>{const d=e.target.closest&&e.target.closest('#stuDrop');if(d)d.classList.remove('hot');});
 document.addEventListener('drop',e=>{const d=e.target.closest&&e.target.closest('#stuDrop');if(d){e.preventDefault();d.classList.remove('hot');addStudioFiles(e.dataTransfer.files);}});
 
+/* ---------- first-time setup on a new server, team members by Leads / AMs, problem reports ---------- */
+function emptyData(){return {users:ROSTER.map(([id,name,role,reportsTo])=>({id,name,role,reportsTo})),projects:[],money:[],blocks:[],plans:[],reports:[],docs:[],raws:[],crm:[],profiles:{},notes:{},reviews:{},
+  audit:[{at:nowStamp(),by:'u1',text:'Dashboard set up with an empty start',projectId:null}],shares:[],boardNotes:[],feedback:[],creativeAI:{},roster:ROSTER_V,boardSeeded:true,example:false};}
+function setupScreen(){const u=app.ui,acc=u.setupDone;
+  if(acc){const rows=acc.map(a=>`<tr><td class="t">${esc(a.name)}<span class="sub">${esc(ROLE[a.role]?.label||a.role)}</span></td><td class="t l num">${esc(a.username)}</td><td class="t l num">${esc(a.password)}</td></tr>`).join('');
+    return `<div class="auth-wrap"><div class="auth-card wide"><div class="brand"><h1>Realty Funnel Desk</h1></div><h2 style="margin:10px 0 4px">Accounts created</h2>
+      <p class="muted" style="margin:0 0 10px;font-size:.88rem">Give each person their username and temporary password; they set their own at first sign-in. <strong>This list is shown only once.</strong> Download or copy it now (it is also in <code>data/initial-passwords.txt</code> on the server). Team Leads can add more people later from Team &amp; access.</p>
+      <div class="tw" style="max-height:52vh;overflow:auto"><table><thead><tr><th class="l">Person</th><th class="l">Username</th><th class="l">Temporary password</th></tr></thead><tbody>${rows}</tbody></table></div>
+      <div class="actions" style="margin-top:12px"><button class="btn" data-act="setupCsv">Download as CSV</button><button class="btn" data-act="setupCopy">Copy all</button><button class="btn primary" data-act="setupLogin">Go to sign-in</button></div></div></div>`;}
+  return shell(`<form id="setupForm" class="auth-form"><h2>Set up the dashboard</h2>
+    <span class="muted" style="font-size:.86rem">This runs once on a new server. It creates a sign-in account for each of the ${ROSTER.length} people in the team list and shows their temporary passwords.</span>
+    ${u.authErr?`<div class="err" role="alert">${esc(u.authErr)}</div>`:''}
+    ${app.setupKey?`<div class="field"><label for="stKey">Setup key</label><input id="stKey" type="password" autocomplete="off" required><span class="muted" style="font-size:.78rem">The SETUP_KEY value set on the server.</span></div>`:''}
+    <fieldset class="field" style="border:0;padding:0;margin:0;gap:6px"><legend class="label" style="margin-bottom:4px">Start with</legend>
+      <label class="check" for="stEmpty"><input type="radio" name="stStart" id="stEmpty" value="empty" checked>An empty dashboard (recommended: the team adds projects and uploads real reports)</label>
+      <label class="check" for="stDemo"><input type="radio" name="stStart" id="stDemo" value="demo">Example projects and the Ten X District 9 sample</label></fieldset>
+    <button class="btn primary" type="submit" ${u.authBusy?'disabled':''}>${u.authBusy?'Creating accounts…':'Create accounts'}</button></form>`);}
+document.addEventListener('submit',async e=>{const f=e.target;if(!f||f.id!=='setupForm')return;e.preventDefault();const u=app.ui;
+  const keyVal=(f.querySelector('#stKey')||{}).value,demo=!!(f.querySelector('#stDemo')||{}).checked;u.authErr='';u.authBusy=true;render();
+  let data;if(demo){data=seed();applyRoster(data);['docs','raws','crm','shares','boardNotes'].forEach(k=>{if(!data[k])data[k]=[];});['profiles','notes','reviews','creativeAI'].forEach(k=>{if(!data[k])data[k]={};});injectTenx(data);upgradeTenx(data);upgradeTenxDetails(data);data.boardSeeded=true;}
+  else data=emptyData();
+  try{const r=await fetch('api/state',{method:'PUT',headers:{'Content-Type':'application/json','If-Match':'0',...(keyVal!=null?{'X-Setup-Key':keyVal}:{})},body:JSON.stringify(data)});const j=await r.json().catch(()=>({}));
+    if(r.ok){u.setupDone=j.accounts||[];u.authBusy=false;render();return;}u.authErr=r.status===409?'The dashboard has already been set up. Reload the page to sign in.':j.error||'Setup failed.';}
+  catch(err){u.authErr='The server could not be reached.';}
+  u.authBusy=false;render();});
+document.addEventListener('click',async e=>{const el=e.target.closest&&e.target.closest('[data-act]');if(!el)return;const a=el.dataset.act,u=app.ui;
+  if(a==='setupCsv'){const q=v=>'"'+String(v).replace(/"/g,'""')+'"';await saveFile('Realty Funnel Desk - sign-in accounts.csv',['Name,Role,Username,Temporary password'].concat((u.setupDone||[]).map(x=>[x.name,ROLE[x.role]?.label||x.role,x.username,x.password].map(q).join(','))).join('\n'));}
+  else if(a==='setupCopy'){try{await navigator.clipboard.writeText((u.setupDone||[]).map(x=>`${x.name} (${ROLE[x.role]?.label||x.role}) · username ${x.username} · temporary password ${x.password}`).join('\n'));toast('Copied.');}catch(err){toast('Copy did not work here. Use Download as CSV.');}}
+  else if(a==='setupLogin'){location.reload();}});
+/* Team Leads and AMs add people to their own team */
+function memberForm(){const v=viewer();if(!['LEAD','AM'].includes(v.role))return '';
+  const roles=v.role==='LEAD'?['AM','SR','JR']:['SR','JR'],team=subtree(v.id),mgrs=D().users.filter(x=>team.has(x.id)&&(x.id===v.id||x.role==='AM'));
+  return `<div class="panel"><div class="panel-h"><div><h2>Add a team member</h2><span class="muted" style="font-size:.8rem">They join your team${v.role==='LEAD'?' (under you or one of your AMs)':''}. You get their first temporary password straight away.</span></div></div>
+    <div class="form"><div class="field"><label for="nuName">Name</label><input id="nuName" placeholder="Full name"></div>
+      <div class="field"><label for="nuRole">Role</label><select id="nuRole">${roles.map(r=>`<option value="${r}">${ROLE[r].label}</option>`).join('')}</select></div>
+      <div class="field"><label for="nuTo">Reports to</label><select id="nuTo">${mgrs.map(m=>`<option value="${m.id}">${esc(m.name)} · ${ROLE[m.role].short}</option>`).join('')}</select></div>
+      <div class="field"><button class="btn primary" data-act="addUser">Add member</button></div></div></div>`;}
+async function afterMemberAdded(id){if(!authed())return;try{const r=await fetch('api/reset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({userId:id})});const j=await r.json();
+  if(r.ok){app.ui.newPw={id,username:j.username,password:j.password};app.accounts=null;render();window.scrollTo(0,0);}}catch(e){}}
+/* problem reports during the trial */
+function feedbackModal(){const u=app.ui;if(!u.fb)return '';const p=u.project&&proj(u.project);
+  const ctx=[({overview:'Dashboard',upload:'Upload',repo:'Repository',studio:'Creative studio',team:'Team & access'})[u.tab]||u.tab,p?p.name:'',u.report?'client report':''].filter(Boolean).join(' · ');
+  return `<div class="modal" data-act="fbClose"><div class="modal-in" data-stop="1" style="width:min(560px,94vw)"><div class="modal-h"><strong>Report a problem or idea</strong><button class="btn" data-act="fbClose">Close</button></div>
+    <div class="modal-b" style="display:flex;flex-direction:column;gap:10px;align-items:stretch;justify-content:flex-start;background:var(--surface);padding:14px 16px">
+      <div class="field"><label for="fbType">What is it?</label><select id="fbType">${['Something is broken','The numbers look wrong','A report did not upload or read correctly','Suggestion','Question'].map(t=>`<option>${t}</option>`).join('')}</select></div>
+      <div class="field"><label for="fbText">What happened, and what did you expect?</label><textarea id="fbText" rows="5" placeholder="e.g. I uploaded the weekly Excel for Skyline Heights; leads show 0 but the file has 42."></textarea></div>
+      <span class="muted" style="font-size:.8rem">Sent with: ${esc(viewer().name)} · ${esc(ctx)} · ${esc(new Date().toLocaleString('en-IN'))}</span>
+      <div class="actions"><button class="btn primary" data-act="fbSend">Send</button></div></div></div></div>`;}
+function feedbackPanel(){const v=viewer(),all=(D().feedback||[]),mine=['L1','LEAD'].includes(v.role)?all:all.filter(f=>f.by===v.id);if(!mine.length&&!['L1','LEAD'].includes(v.role))return '';
+  const open=mine.filter(f=>f.status!=='fixed').length,can=['L1','LEAD'].includes(v.role);
+  return `<div class="panel"><div class="panel-h"><div><h2>${can?'Problems reported':'Your problem reports'}</h2><span class="muted" style="font-size:.8rem">${open} open · ${mine.length-open} fixed${can?' · from anyone using the dashboard':''}</span></div>${can&&mine.length?`<button class="btn" data-act="fbExport">Download as CSV</button>`:''}</div>
+    ${mine.length?`<div class="tw" style="border:0"><table><thead><tr><th class="l">Reported</th><th class="l">What</th><th class="l">Where</th><th class="l">Status</th></tr></thead><tbody>
+    ${mine.map(f=>`<tr><td class="t">${fmtDT(f.at)}<span class="sub">${esc(user(f.by)?.name||'')}</span></td><td class="t l" style="white-space:normal;min-width:260px"><strong style="font-weight:600">${esc(f.type)}</strong><span style="display:block;white-space:pre-wrap">${esc(f.text)}</span>${f.reply?`<span class="sub">Reply: ${esc(f.reply)}</span>`:''}</td>
+      <td class="t l" style="white-space:normal">${esc(f.context||'')}</td><td class="t l">${f.status==='fixed'?'<span class="chip ok">Fixed</span>':'<span class="chip due">Open</span>'}${can?`<span class="sub"><button class="btn link" data-act="fbToggle" data-v="${f.id}">${f.status==='fixed'?'Reopen':'Mark fixed'}</button></span>`:''}</td></tr>`).join('')}</tbody></table></div>`:'<div class="empty">Nothing reported yet. Anyone can use "Report a problem" at the top of the page.</div>'}</div>`;}
+document.addEventListener('click',e=>{const el=e.target.closest&&e.target.closest('[data-act]');if(!el||!app.data)return;const a=el.dataset.act,u=app.ui;
+  if(a==='fbOpen'){u.fb=true;render();setTimeout(()=>{const t=document.getElementById('fbText');if(t)t.focus();},0);}
+  else if(a==='fbClose'){if(e.target.closest('[data-stop]')&&!e.target.closest('button[data-act="fbClose"]'))return;u.fb=false;render();}
+  else if(a==='fbSend'){const text=(document.getElementById('fbText')||{}).value||'';if(!text.trim()){toast('Describe the problem first.');return;}
+    const p=u.project&&proj(u.project),ctx=[({overview:'Dashboard',upload:'Upload',repo:'Repository',studio:'Creative studio',team:'Team & access'})[u.tab]||u.tab,p?p.name:'',u.report?'client report':'',u.from||u.to?`period ${u.from||'…'} to ${u.to||'…'}`:''].filter(Boolean).join(' · ');
+    const rec={id:uid('fb'),by:u.viewer,at:nowStamp(),type:document.getElementById('fbType').value,text:text.trim().slice(0,4000),context:ctx+' · '+navigator.userAgent.replace(/^Mozilla\/5\.0 /,'').slice(0,90),status:'open'};
+    u.fb=false;commit(d=>{d.feedback=d.feedback||[];d.feedback.unshift(rec);},'Reported a problem: '+rec.type);toast('Thanks. Sent to L1 and the Team Leads.');}
+  else if(a==='fbToggle'){const f=(D().feedback||[]).find(x=>x.id===el.dataset.v);if(!f)return;const fixed=f.status!=='fixed';
+    commit(d=>{const x=d.feedback.find(y=>y.id===f.id);x.status=fixed?'fixed':'open';x.closedBy=fixed?u.viewer:null;x.closedAt=fixed?nowStamp():null;},(fixed?'Marked fixed: ':'Reopened: ')+f.type);}
+  else if(a==='fbExport'){const q=v=>'"'+String(v||'').replace(/"/g,'""')+'"';saveFile('Realty Funnel Desk - problems reported.csv',['Reported,By,Type,Description,Where,Status'].concat((D().feedback||[]).map(f=>[f.at,user(f.by)?.name,f.type,f.text,f.context,f.status].map(q).join(','))).join('\n'));}});
+
 /* ---------- render & events ---------- */
 function render(){
   MEMO={};
@@ -2663,7 +2731,7 @@ function render(){
   if(app.ui.tab==='upload'&&viewer().role==='L1')app.ui.tab='overview';
   const t=app.ui.tab;
   const rp=app.ui.report&&visibleProjects().some(p=>p.id===app.ui.report);
-  root.innerHTML=header()+`<main>${rp?reportView(app.ui.report):t==='overview'?overview():t==='upload'?uploadView():t==='repo'?repoView():t==='studio'?studioTab():teamView()}</main>`+modal()+dataModal()+studioModal();
+  root.innerHTML=header()+`<main>${rp?reportView(app.ui.report):t==='overview'?overview():t==='upload'?uploadView():t==='repo'?repoView():t==='studio'?studioTab():teamView()}</main>`+modal()+dataModal()+studioModal()+feedbackModal();
   if(app.ui.studio&&app.ui.tab==='studio')setTimeout(paintStudio,0);
   if(app.ui.tab==='studio')setTimeout(scoreAllCreatives,0);
   if(focusId){const el=document.getElementById(focusId);if(el&&el.focus){el.focus();if(el.type==='search'){const n=el.value.length;try{el.setSelectionRange(n,n);}catch(e){}}}}
@@ -2743,7 +2811,7 @@ document.addEventListener('click',e=>{
       const npid=uid('p'),brd=viewer().role==='L1';u.tab='overview';u.loc=loc;u.brand=brand;u.project=npid;if(!brd){u.editProfile=npid;u.pfDraft=blankProfile();}commit(d=>d.projects.push({id:npid,location:loc,brand,name,startDate:g('npStart')||todayISO(),ownerId:g('npOwner'),cadence:g('npCad')}),`Added project ${name} (${brand}, ${loc})`,npid);window.scrollTo(0,0);toast(brd?'Project added. '+(user(g('npOwner'))?.name||'The owner')+' will add its details.':'Project added. Now add its details.');break;}
     case 'addUser':{const name=document.getElementById('nuName').value.trim();if(!name){toast('Enter a name.');break;}
       const role=document.getElementById('nuRole').value,to=document.getElementById('nuTo').value;
-      commit(d=>d.users.push({id:uid('u'),name,role,reportsTo:to}),`Added ${name} as ${ROLE[role].label}`);toast(name+' added.');break;}
+      const nid=uid('u');commit(d=>d.users.push({id:nid,name,role,reportsTo:to}),`Added ${name} as ${ROLE[role].label}`).then(()=>afterMemberAdded(nid));toast(name+' added.');break;}
     case 'export':{const blob=new Blob([JSON.stringify(D(),null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='realty-funnel-desk-'+todayISO()+'.json';document.body.appendChild(a);a.click();a.remove();toast('If the download did not start, use Copy data to clipboard.');break;}
     case 'copyJson':navigator.clipboard.writeText(JSON.stringify(D())).then(()=>toast('Data copied.'),()=>toast('Copying is blocked here. Use Export on your hosted version.'));break;
     case 'clearExample':u.confirm='clear';render();break;
@@ -2793,9 +2861,10 @@ document.addEventListener('drop',e=>{const d=e.target.closest&&e.target.closest(
 /* ---------- boot ---------- */
 (async function(){
   const gate=await authCheck();if(gate.stop){render();return;}
+  if(app.setup){app.gate=()=>setupScreen();render();return;}
   const data=await Store.init();
   app.data=data&&data.users?data:seed();
-  if(!app.data.docs)app.data.docs=[];
+  if(!app.data.docs)app.data.docs=[];if(!app.data.feedback)app.data.feedback=[];
   if(!app.data.blocks)app.data.blocks=[];
   ['raws','shares','crm'].forEach(k=>{if(!app.data[k])app.data[k]=[];});['profiles','notes','reviews'].forEach(k=>{if(!app.data[k])app.data[k]={};});if(!app.data.boardNotes)app.data.boardNotes=[];
   const rosterChanged=applyRoster(app.data);

@@ -1,0 +1,21 @@
+# Render Blueprint for the server version (sign-in, one shared dataset for the team).
+# New → Blueprint → this repository. Find the generated SETUP_KEY under the service's Environment.
+services:
+  - type: web
+    name: realty-funnel-desk
+    runtime: node
+    rootDir: self-host
+    buildCommand: echo "No build step"
+    startCommand: node server.js
+    plan: starter
+    disk:
+      name: data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: DATA_DIR
+        value: /var/data
+      - key: COOKIE_SECURE
+        value: "1"
+      - key: SETUP_KEY
+        generateValue: true

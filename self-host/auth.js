@@ -27,19 +27,21 @@ module.exports = function makeAuth(DATA_DIR) {
   // Make sure every team member has an account. New accounts get a temporary password that the
   // server owner can read once from DATA_DIR/initial-passwords.txt (or reset from Team & access).
   function syncAccounts(data, log) {
-    if (!data || !Array.isArray(data.users)) return;
-    const taken = new Set(Object.values(auth.accounts).map(a => a.username)); const fresh = [];
+    if (!data || !Array.isArray(data.users)) return [];
+    const taken = new Set(Object.values(auth.accounts).map(a => a.username)); const fresh = [], list = [];
     for (const u of data.users) {
       if (auth.accounts[u.id]) continue;
       let name = slug(u.name), n = 2; while (taken.has(name)) name = slug(u.name) + n++;
       taken.add(name); auth.accounts[u.id] = { username: name };
       const pw = tempPassword(); setPassword(u.id, pw, true); fresh.push(`${u.name.padEnd(24)} ${String(u.role).padEnd(5)} ${name.padEnd(22)} ${pw}`);
+      list.push({ userId: u.id, name: u.name, role: u.role, username: name, password: pw });
     }
     if (fresh.length) {
       const f = path.join(DATA_DIR, 'initial-passwords.txt');
       fs.appendFileSync(f, `# ${new Date().toISOString()} — temporary passwords (each person sets their own at first sign-in). Delete this file after handing them out.\n${fresh.join('\n')}\n\n`, { mode: 0o600 });
       if (log) log(`Created ${fresh.length} sign-in account(s). Temporary passwords are in ${f}`);
     }
+    return list;
   }
 
   // ---------- sessions ----------
@@ -96,6 +98,7 @@ module.exports = function makeAuth(DATA_DIR) {
     if (data.creativeAI) { const ok = new Set((out.docs || []).map(d => d.id)); out.creativeAI = Object.fromEntries(Object.entries(data.creativeAI).filter(([id]) => ok.has(String(id).split('#')[0]))); }
     if (Array.isArray(data.audit)) { const team = subtree(data.users || [], uid);
       out.audit = data.audit.filter(a => me.role === 'L1' || (a.projectId ? V.has(a.projectId) : (['LEAD', 'AM'].includes(me.role) && a.by && team.has(a.by)))); }
+    if (Array.isArray(data.feedback)) out.feedback = ['L1', 'LEAD'].includes(me.role) ? data.feedback : data.feedback.filter(f => f.by === uid);
     return out;
   }
   // Merge a save from one person into the full data: they can only change what their role lets them see.
@@ -117,6 +120,18 @@ module.exports = function makeAuth(DATA_DIR) {
       const keep = Object.entries(full.creativeAI || {}).filter(([id]) => !V.has(pd(id))), mine = Object.entries(incoming.creativeAI || {}).filter(([id]) => V.has(pd(id)));
       out.creativeAI = Object.fromEntries(keep.concat(mine)); }
     if (role === 'L1') { out.users = incoming.users || full.users; out.example = incoming.example; }
+    else if (role === 'LEAD' || role === 'AM') {
+      const RANK = { L1: 0, LEAD: 1, AM: 2, SR: 3, JR: 3 }, team = subtree(full.users || [], uid), known = new Set((full.users || []).map(u => u.id));
+      const added = (incoming.users || []).filter(u => u && u.id && !known.has(u.id) && team.has(u.reportsTo) && RANK[u.role] > RANK[role] && String(u.name || '').trim())
+        .map(u => ({ id: String(u.id), name: String(u.name).trim().slice(0, 80), role: u.role, reportsTo: u.reportsTo }));
+      out.users = (full.users || []).concat(added);
+    }
+    // problems reported during the trial: anyone adds their own; L1 and Team Leads update the status
+    { const byId = new Map((full.feedback || []).map(f => [f.id, f]));
+      for (const f of incoming.feedback || []) { if (!f || !f.id) continue; const cur = byId.get(f.id);
+        if (!cur) { if (f.by === uid) byId.set(f.id, { ...f, text: String(f.text || '').slice(0, 4000) }); }
+        else if (role === 'L1' || role === 'LEAD') byId.set(f.id, { ...cur, status: f.status, reply: f.reply, closedBy: f.closedBy, closedAt: f.closedAt }); }
+      out.feedback = [...byId.values()].sort((a, b) => String(b.at).localeCompare(String(a.at))).slice(0, 2000); }
     { const seen = new Set((full.audit || []).map(a => a.at + '|' + a.by + '|' + a.text));
       const add = (incoming.audit || []).filter(a => !seen.has(a.at + '|' + a.by + '|' + a.text) && a.by === uid);
       out.audit = add.concat(full.audit || []).sort((a, b) => String(b.at).localeCompare(String(a.at))).slice(0, 1000); }
