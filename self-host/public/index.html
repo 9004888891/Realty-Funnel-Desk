@@ -2015,22 +2015,22 @@ function noteRecent(pid){let r=recentIds().filter(x=>x!==pid);r.unshift(pid);r=r
 function openProject(pid){const p=proj(pid),u=app.ui;if(!p||!visibleProjects().some(x=>x.id===pid))return;
   u.tab='overview';u.report=null;u.editProfile=null;u.editReview=null;u.loc=p.location;u.brand=p.brand;u.project=pid;render();window.scrollTo(0,0);}
 function quickFilters(){const u=app.ui,all=visibleProjects();if(all.length<2)return '';
-  const byName=(a,b)=>a.name.localeCompare(b.name),locs=[...new Set(all.map(p=>p.location))].sort();
+  const byName=(a,b)=>a.name.localeCompare(b.name),locs=[...new Set(all.filter(p=>!u.brand||p.brand===u.brand).map(p=>p.location))].sort();
   const inLoc=all.filter(p=>!u.loc||p.location===u.loc),brands=[...new Set(inLoc.map(p=>p.brand))].sort();
   const cur=u.project&&all.some(p=>p.id===u.project)?u.project:'',projs=(cur?all:inLoc.filter(p=>!u.brand||p.brand===u.brand)).sort(byName);
   const opt=(v,l,sel)=>`<option value="${esc(v)}" ${sel?'selected':''}>${esc(l)}</option>`;
   const groups=u.brand&&!cur?projs.map(p=>opt(p.id,p.name,p.id===cur)).join(''):[...new Set(projs.map(p=>p.brand))].sort().map(b=>`<optgroup label="${esc(b)}${u.loc?'':' · '+esc([...new Set(projs.filter(p=>p.brand===b).map(p=>p.location))].join(', '))}">${projs.filter(p=>p.brand===b).map(p=>opt(p.id,p.name,p.id===cur)).join('')}</optgroup>`).join('');
   const rec=recentIds().filter(id=>id!==cur).map(proj).filter(Boolean).slice(0,5);
   return `<div class="qf" role="search" aria-label="Quick filters">
-    ${locs.length>1?`<div class="field"><label for="qfLoc">Location</label><select id="qfLoc" data-change="qfLoc">${opt('','All locations',!u.loc)}${locs.map(l=>opt(l,l,l===u.loc)).join('')}</select></div>`:''}
+    ${locs.length>1||u.loc||u.brand?`<div class="field"><label for="qfLoc">Location</label><select id="qfLoc" data-change="qfLoc">${opt('',u.brand?'All locations for '+u.brand:'All locations',!u.loc)}${locs.map(l=>opt(l,l,l===u.loc)).join('')}</select></div>`:''}
     ${brands.length>1||u.brand?`<div class="field"><label for="qfBrand">Brand</label><select id="qfBrand" data-change="qfBrand">${opt('',u.loc?'All brands in '+u.loc:'All brands',!u.brand)}${brands.map(b=>opt(b,b,b===u.brand)).join('')}</select></div>`:''}
     <div class="field qf-p"><label for="qfProject">Project</label><select id="qfProject" data-change="qfProject">${opt('',cur?'Back to the '+(u.brand?'brand':u.loc?'location':'company')+' summary':`Choose a project (${projs.length})`,!cur)}${groups}</select></div>
     ${u.loc||u.brand||cur?`<button class="btn link" data-act="qfClear">Clear filters</button>`:''}
     ${rec.length?`<div class="qf-rec"><span class="label">Recent</span>${rec.map(p=>`<button class="chipbtn" data-act="qfOpen" data-v="${p.id}" title="${esc(p.brand)} · ${esc(p.location)}">${esc(p.name)}</button>`).join('')}</div>`:''}
   </div>`;}
 document.addEventListener('change',e=>{const el=e.target;if(!el||!el.dataset||!app.data)return;const u=app.ui,c=el.dataset.change;
-  if(c==='qfLoc'){u.loc=el.value||null;u.brand=null;u.project=null;u.report=null;render();}
-  else if(c==='qfBrand'){const b=el.value||null;u.brand=b;u.project=null;u.report=null;if(b&&!u.loc){const ls=[...new Set(visibleProjects().filter(p=>p.brand===b).map(p=>p.location))];if(ls.length===1)u.loc=ls[0];}render();}
+  if(c==='qfLoc'){u.loc=el.value||null;if(u.brand&&u.loc&&!visibleProjects().some(p=>p.brand===u.brand&&p.location===u.loc))u.brand=null;u.project=null;u.report=null;render();}
+  else if(c==='qfBrand'){const b=el.value||null;u.brand=b;u.project=null;u.report=null;if(b&&u.loc&&!visibleProjects().some(p=>p.brand===b&&p.location===u.loc))u.loc=null;if(b&&!u.loc){const ls=[...new Set(visibleProjects().filter(p=>p.brand===b).map(p=>p.location))];if(ls.length===1)u.loc=ls[0];}render();}
   else if(c==='qfProject'){if(el.value)openProject(el.value);else{u.project=null;u.report=null;render();}}});
 document.addEventListener('click',e=>{const el=e.target.closest&&e.target.closest('[data-act]');if(!el||!app.data)return;const u=app.ui;
   if(el.dataset.act==='qfOpen')openProject(el.dataset.v);
