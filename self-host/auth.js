@@ -28,6 +28,9 @@ module.exports = function makeAuth(DATA_DIR) {
   // server owner can read once from DATA_DIR/initial-passwords.txt (or reset from Team & access).
   function syncAccounts(data, log) {
     if (!data || !Array.isArray(data.users)) return [];
+    const live = new Set(data.users.map(u => u.id)); let pruned = 0;
+    for (const id of Object.keys(auth.accounts)) if (!live.has(id)) { delete auth.accounts[id]; endSessionsFor(id); pruned++; }
+    if (pruned) { save(); if (log) log(`Removed ${pruned} sign-in account(s) of people no longer in the team.`); }
     const taken = new Set(Object.values(auth.accounts).map(a => a.username)); const fresh = [], list = [];
     for (const u of data.users) {
       if (auth.accounts[u.id]) continue;
@@ -119,12 +122,39 @@ module.exports = function makeAuth(DATA_DIR) {
       const pd = id => docP.get(String(id).split('#')[0]);
       const keep = Object.entries(full.creativeAI || {}).filter(([id]) => !V.has(pd(id))), mine = Object.entries(incoming.creativeAI || {}).filter(([id]) => V.has(pd(id)));
       out.creativeAI = Object.fromEntries(keep.concat(mine)); }
-    if (role === 'L1') { out.users = incoming.users || full.users; out.example = incoming.example; }
-    else if (role === 'LEAD' || role === 'AM') {
-      const RANK = { L1: 0, LEAD: 1, AM: 2, SR: 3, JR: 3 }, team = subtree(full.users || [], uid), known = new Set((full.users || []).map(u => u.id));
-      const added = (incoming.users || []).filter(u => u && u.id && !known.has(u.id) && team.has(u.reportsTo) && RANK[u.role] > RANK[role] && String(u.name || '').trim())
-        .map(u => ({ id: String(u.id), name: String(u.name).trim().slice(0, 80), role: u.role, reportsTo: u.reportsTo }));
-      out.users = (full.users || []).concat(added);
+    // team members: L1 changes anyone; Leads and AMs add, move and remove people below them in their own team
+    { const RANK = { L1: 0, LEAD: 1, AM: 2, SR: 3, JR: 3 }, cur = full.users || [], byId = new Map(cur.map(u => [u.id, u])), inc = Array.isArray(incoming.users) ? incoming.users : cur;
+      const team = role === 'L1' ? new Set(cur.map(u => u.id)) : subtree(cur, uid);
+      const below = u => u && u.id !== uid && team.has(u.id) && (role === 'L1' ? u.role !== 'L1' || cur.filter(x => x.role === 'L1').length > 1 : RANK[u.role] > RANK[role]);
+      const norm = n => String(n || '').toLowerCase().replace(/\s+/g, ' ').trim();
+      let users = cur.map(u => ({ ...u }));
+      if (role === 'L1' || role === 'LEAD' || role === 'AM') {
+        const incIds = new Map(inc.filter(u => u && u.id).map(u => [String(u.id), u]));
+        // moves (who someone reports to, and for L1 the role and name too)
+        users = users.map(u => { const n = incIds.get(u.id); if (!n || !below(u) && !(role === 'L1' && u.id !== uid)) return u;
+          const to = byId.get(n.reportsTo); const next = { ...u };
+          if (role === 'L1') { if (n.name && String(n.name).trim()) next.name = String(n.name).trim().slice(0, 80); if (RANK[n.role] !== undefined) next.role = n.role; next.reportsTo = n.reportsTo && byId.has(n.reportsTo) ? n.reportsTo : (n.reportsTo ? u.reportsTo : null); }
+          else if (to && team.has(to.id) && RANK[to.role] < RANK[u.role]) next.reportsTo = to.id;
+          return next; });
+        // removals
+        const gone = new Set(users.filter(u => !incIds.has(u.id) && below(u)).map(u => u.id));
+        // additions, never a second person with the same name
+        const names = new Set(users.map(u => norm(u.name)));
+        for (const n of inc) { if (!n || !n.id || byId.has(String(n.id)) || !String(n.name || '').trim()) continue;
+          const nm = String(n.name).trim().slice(0, 80);
+          if (names.has(norm(nm)) || RANK[n.role] === undefined) continue;
+          if (role !== 'L1' && !(team.has(n.reportsTo) && RANK[n.role] > RANK[role])) continue;
+          if (role === 'L1' && n.reportsTo && !byId.has(n.reportsTo)) continue;
+          names.add(norm(nm)); users.push({ id: String(n.id), name: nm, role: n.role, reportsTo: n.reportsTo || null }); }
+        // a removal only goes through once nobody reports to them and they own no projects
+        const blocked = id => users.some(u => !gone.has(u.id) && u.reportsTo === id) || (out.projects || []).some(p => p.ownerId === id);
+        let changed = true; while (changed) { changed = false; for (const id of gone) if (blocked(id)) { gone.delete(id); changed = true; } }
+        const formerIds = new Set((full.former || []).map(f => f.id));
+        out.former = (full.former || []).concat(users.filter(u => gone.has(u.id) && !formerIds.has(u.id)).map(u => ({ id: u.id, name: u.name, role: u.role, reportsTo: u.reportsTo, removedAt: new Date().toISOString(), removedBy: uid })));
+        users = users.filter(u => !gone.has(u.id));
+      }
+      out.users = users;
+      if (role === 'L1') out.example = incoming.example;
     }
     // problems reported during the trial: anyone adds their own; L1 and Team Leads update the status
     { const byId = new Map((full.feedback || []).map(f => [f.id, f]));

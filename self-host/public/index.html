@@ -451,7 +451,7 @@ const app={data:null,ui:{viewer:'u1',tab:'overview',loc:null,brand:null,project:
   repoTab:'periodic',report:null,rptOpt:{ins:true,camp:true,crm:true,mom:true,budget:true},editReview:null,rvDraft:null,rptMode:'client',perfSort:'',geoEdit:null,geoDraft:null,rptPeriod:'',rptLink:null,perfLvl:'campaign',perfPl:'',perfAll:false,editProfile:null,pfDraft:null,repoBrand:'',repoProject:'',viewDoc:null,
   up:{projectId:'',kind:'report',type:'weekly',from:'',to:'',month:todayISO().slice(0,7),platform:'Meta',level:'full',channel:'',title:'',parsed:null,files:[],error:'',done:''}}};
 const D=()=>app.data;
-const user=id=>D().users.find(u=>u.id===id);
+const user=id=>D().users.find(u=>u.id===id)||formerUser(id);
 const proj=id=>D().projects.find(p=>p.id===id);
 const viewer=()=>user(app.ui.viewer)||D().users[0];
 
@@ -998,7 +998,7 @@ function repoView(){
 function teamView(){
   const v=viewer(),s=scope(),mine=D().projects.filter(p=>s.own.has(p.id)||v.role==='L1');
   const tree=id=>{const u=user(id);const kids=D().users.filter(x=>x.reportsTo===id);const n=D().projects.filter(p=>p.ownerId===id).length;
-    return `<li><div class="who"><strong>${esc(u.name)}</strong><span class="rolechip">${ROLE[u.role].label}</span><span class="muted" style="font-size:.8rem">${n} project${n===1?'':'s'}</span>${u.id===v.id?'<span class="chip ro">You</span>':''}</div>${kids.length?`<ul>${kids.map(k=>tree(k.id)).join('')}</ul>`:''}</li>`;};
+    return `<li><div class="who"><strong>${esc(u.name)}</strong><span class="rolechip">${ROLE[u.role].label}</span><span class="muted" style="font-size:.8rem">${n} project${n===1?'':'s'}</span>${u.id===v.id?'<span class="chip ro">You</span>':''}${canRemove(u)?`<button class="btn link" style="color:var(--bad);font-size:.8rem;margin-left:auto" data-act="rmUser" data-v="${u.id}" aria-label="Remove ${esc(u.name)}">Remove</button>`:''}</div>${kids.length?`<ul>${kids.map(k=>tree(k.id)).join('')}</ul>`:''}</li>`;};
   const exec=v.role==='SR'||v.role==='JR';
   let roots=D().users.filter(u=>!u.reportsTo);
   if(v.role==='LEAD'||v.role==='AM')roots=[v];
@@ -1040,13 +1040,7 @@ function teamView(){
       <div class="field"><label for="npCad">Report cadence</label><select id="npCad"><option>weekly</option><option>daily</option><option>monthly</option></select></div>
       <div class="field"><button class="btn primary" data-act="addProject">Add project</button></div>
     </div></div>`:''}
-  ${v.role==='L1'?`<div class="panel"><h2>Team members</h2>
-    <div class="form">
-      <div class="field"><label for="nuName">Name</label><input id="nuName" placeholder="Full name"></div>
-      <div class="field"><label for="nuRole">Role</label><select id="nuRole">${ROLE_ORDER.filter(r=>r!=='L1').map(r=>`<option value="${r}">${ROLE[r].label}</option>`).join('')}</select></div>
-      <div class="field"><label for="nuTo">Reports to</label><select id="nuTo">${D().users.filter(u=>['L1','LEAD','AM'].includes(u.role)).map(u=>`<option value="${u.id}">${esc(u.name)} · ${ROLE[u.role].short}</option>`).join('')}</select></div>
-      <div class="field"><button class="btn" data-act="addUser">Add member</button></div>
-    </div></div>
+  ${v.role==='L1'?`${l1MemberForm()}
   <div class="panel"><h2>Data</h2>
     <span class="muted" style="font-size:.85rem">${Store.mode==='server'?'Data is stored on your server and shared with everyone who opens this dashboard.':'In this preview, data is kept in this browser only. Host it on your server to share it across the team.'}</span>
     <div class="actions"><button class="btn" data-act="export">Export data (JSON)</button><button class="btn" data-act="copyJson">Copy data to clipboard</button>
@@ -2688,13 +2682,6 @@ document.addEventListener('click',async e=>{const el=e.target.closest&&e.target.
   else if(a==='setupCopy'){try{await navigator.clipboard.writeText((u.setupDone||[]).map(x=>`${x.name} (${ROLE[x.role]?.label||x.role}) · username ${x.username} · temporary password ${x.password}`).join('\n'));toast('Copied.');}catch(err){toast('Copy did not work here. Use Download as CSV.');}}
   else if(a==='setupLogin'){location.reload();}});
 /* Team Leads and AMs add people to their own team */
-function memberForm(){const v=viewer();if(!['LEAD','AM'].includes(v.role))return '';
-  const roles=v.role==='LEAD'?['AM','SR','JR']:['SR','JR'],team=subtree(v.id),mgrs=D().users.filter(x=>team.has(x.id)&&(x.id===v.id||x.role==='AM'));
-  return `<div class="panel"><div class="panel-h"><div><h2>Add a team member</h2><span class="muted" style="font-size:.8rem">They join your team${v.role==='LEAD'?' (under you or one of your AMs)':''}. You get their first temporary password straight away.</span></div></div>
-    <div class="form"><div class="field"><label for="nuName">Name</label><input id="nuName" placeholder="Full name"></div>
-      <div class="field"><label for="nuRole">Role</label><select id="nuRole">${roles.map(r=>`<option value="${r}">${ROLE[r].label}</option>`).join('')}</select></div>
-      <div class="field"><label for="nuTo">Reports to</label><select id="nuTo">${mgrs.map(m=>`<option value="${m.id}">${esc(m.name)} · ${ROLE[m.role].short}</option>`).join('')}</select></div>
-      <div class="field"><button class="btn primary" data-act="addUser">Add member</button></div></div></div>`;}
 async function afterMemberAdded(id){if(!authed())return;try{const r=await fetch('api/reset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({userId:id})});const j=await r.json();
   if(r.ok){app.ui.newPw={id,username:j.username,password:j.password};app.accounts=null;render();window.scrollTo(0,0);}}catch(e){}}
 /* problem reports during the trial */
@@ -2723,6 +2710,75 @@ document.addEventListener('click',e=>{const el=e.target.closest&&e.target.closes
     commit(d=>{const x=d.feedback.find(y=>y.id===f.id);x.status=fixed?'fixed':'open';x.closedBy=fixed?u.viewer:null;x.closedAt=fixed?nowStamp():null;},(fixed?'Marked fixed: ':'Reopened: ')+f.type);}
   else if(a==='fbExport'){const q=v=>'"'+String(v||'').replace(/"/g,'""')+'"';saveFile('Realty Funnel Desk - problems reported.csv',['Reported,By,Type,Description,Where,Status'].concat((D().feedback||[]).map(f=>[f.at,user(f.by)?.name,f.type,f.text,f.context,f.status].map(q).join(','))).join('\n'));}});
 
+/* ---------- team members: no duplicates, confirm before adding, remove with hand-over ---------- */
+const RANKC={L1:0,LEAD:1,AM:2,SR:3,JR:3};
+const normName=n=>String(n||'').toLowerCase().replace(/\s+/g,' ').trim();
+function formerUser(id){const f=(D().former||[]).find(x=>x.id===id);return f?{...f,name:f.name+' (removed)',removed:true}:undefined;}
+const sameName=name=>D().users.find(x=>normName(x.name)===normName(name));
+function canRemove(t){const v=viewer();if(!t||!v||t.id===v.id||t.removed)return false;
+  if(v.role==='L1')return t.role!=='L1'||D().users.filter(x=>x.role==='L1').length>1;
+  if(!['LEAD','AM'].includes(v.role))return false;return subtree(v.id).has(t.id)&&RANKC[t.role]>RANKC[v.role];}
+function memberFields(roles,mgrs,primary){const u=app.ui,dr=u.nuDraft||{},c=u.nuConfirm,dup=u.nuDup,dis=c?'disabled':'';
+  return `<div class="form">
+      <div class="field"><label for="nuName">Name</label><input id="nuName" placeholder="Full name" value="${esc(dr.name||'')}" ${dis}></div>
+      <div class="field"><label for="nuRole">Role</label><select id="nuRole" ${dis}>${roles.map(r=>`<option value="${r}" ${dr.role===r?'selected':''}>${ROLE[r].label}</option>`).join('')}</select></div>
+      <div class="field"><label for="nuTo">Reports to</label><select id="nuTo" ${dis}>${mgrs.map(m=>`<option value="${m.id}" ${dr.to===m.id?'selected':''}>${esc(m.name)} · ${ROLE[m.role].short}</option>`).join('')}</select></div>
+      ${c?'':`<div class="field"><button class="btn ${primary?'primary':''}" data-act="addUser">Add member</button></div>`}</div>
+    ${dup?`<div class="note" role="alert" style="background:var(--bad-soft)"><span><strong>${esc(dup.name)}</strong> is already in the team (${ROLE[dup.role]?.label||dup.role}${user(dup.reportsTo)?', reports to '+esc(user(dup.reportsTo).name):''}). Nothing was added. If this is a different person, add a surname or initial so the two can be told apart.</span></div>`:''}
+    ${c?`<div class="note" style="background:var(--warn-soft)"><span>Add <strong>${esc(c.name)}</strong> as ${ROLE[c.role].label}, reporting to ${esc(user(c.to)?.name||'')}?${authed()?' A sign-in account is created and you get their temporary password.':''}</span>
+      <span class="actions"><button class="btn primary" data-act="nuYes" ${u.nuBusy?'disabled':''}>${u.nuBusy?'Adding…':'Yes, add'}</button><button class="btn" data-act="nuNo" ${u.nuBusy?'disabled':''}>Cancel</button></span></div>`:''}`;}
+function memberForm(){const v=viewer();if(!['LEAD','AM'].includes(v.role))return '';
+  const roles=v.role==='LEAD'?['AM','SR','JR']:['SR','JR'],team=subtree(v.id),mgrs=D().users.filter(x=>team.has(x.id)&&(x.id===v.id||x.role==='AM'));
+  return `<div class="panel"><div class="panel-h"><div><h2>Add a team member</h2><span class="muted" style="font-size:.8rem">They join your team${v.role==='LEAD'?' (under you or one of your AMs)':''}. You get their first temporary password straight away. To remove someone, use Remove next to their name under Your team.</span></div></div>
+    ${memberFields(roles,mgrs,true)}</div>`;}
+function l1MemberForm(){return `<div class="panel"><div class="panel-h"><div><h2>Team members</h2><span class="muted" style="font-size:.8rem">To remove someone, use Remove next to their name under Team structure.</span></div></div>
+  ${memberFields(ROLE_ORDER.filter(r=>r!=='L1'),D().users.filter(u=>['L1','LEAD','AM'].includes(u.role)),false)}</div>`;}
+function removeModal(){const id=app.ui.rmUser,t=id&&D().users.find(x=>x.id===id);if(!t||!canRemove(t))return '';
+  const v=viewer(),projs=D().projects.filter(p=>p.ownerId===id),kids=D().users.filter(x=>x.reportsTo===id);
+  const pool=v.role==='L1'?D().users:D().users.filter(x=>subtree(v.id).has(x.id)),gone=subtree(id);
+  const owners=pool.filter(x=>!gone.has(x.id)&&x.role!=='L1'),mgrs=pool.filter(x=>!gone.has(x.id)&&['L1','LEAD','AM'].includes(x.role)&&RANKC[x.role]<=RANKC[t.role]);
+  const pick=(list,want)=>list.some(x=>x.id===want)?want:list[0]?.id;
+  const po=pick(owners,t.reportsTo),pm=pick(mgrs,t.reportsTo),stuck=(projs.length&&!owners.length)||(kids.length&&!mgrs.length);
+  const opt=(list,sel)=>list.map(x=>`<option value="${x.id}" ${x.id===sel?'selected':''}>${esc(x.name)} · ${ROLE[x.role].short}</option>`).join('');
+  return `<div class="modal" data-act="rmNo"><div class="modal-in" data-stop="1" style="width:min(560px,94vw)"><div class="modal-h"><strong>Remove ${esc(t.name)}?</strong><button class="btn" data-act="rmNo">Close</button></div>
+    <div class="modal-b" style="display:flex;flex-direction:column;gap:12px;align-items:stretch;justify-content:flex-start;background:var(--surface);padding:14px 16px">
+      <span>${esc(t.name)} · ${ROLE[t.role].label}${user(t.reportsTo)?', reports to '+esc(user(t.reportsTo).name):''}</span>
+      ${projs.length?`<div class="field"><label for="rmProj">Their ${projs.length} project${projs.length>1?'s':''} (${esc(projs.slice(0,4).map(p=>p.name).join(', '))}${projs.length>4?'…':''}) move to</label><select id="rmProj">${opt(owners,po)}</select></div>`:'<span class="muted">They do not own any projects.</span>'}
+      ${kids.length?`<div class="field"><label for="rmMgr">${kids.length} ${kids.length>1?'people report':'person reports'} to them (${esc(kids.slice(0,4).map(k=>k.name).join(', '))}${kids.length>4?'…':''}). From now on they report to</label><select id="rmMgr">${opt(mgrs,pm)}</select></div>`:''}
+      <span class="muted" style="font-size:.85rem">${authed()?'Their sign-in stops working straight away. ':''}Their uploads, reviews and activity stay, shown under their name marked “(removed)”. This cannot be undone; you can add them again later as a new member.</span>
+      ${stuck?'<div class="note" style="background:var(--bad-soft)"><span>There is nobody in your team to hand their projects or people to. Add someone first, or ask L1.</span></div>':''}
+      <span class="actions"><button class="btn primary" style="background:var(--bad);border-color:var(--bad)" data-act="rmYes" data-v="${t.id}" ${stuck||app.ui.rmBusy?'disabled':''}>${app.ui.rmBusy?'Removing…':'Remove '+esc(t.name)}</button><button class="btn" data-act="rmNo">Cancel</button></span>
+    </div></div></div>`;}
+document.addEventListener('click',async e=>{const el=e.target.closest&&e.target.closest('[data-act]');if(!el||!app.data)return;const a=el.dataset.act,u=app.ui;
+  if(!['addUser','nuYes','nuNo','rmUser','rmNo','rmYes'].includes(a))return;e.stopImmediatePropagation();
+  if(a==='addUser'){const name=(document.getElementById('nuName')||{}).value?.trim()||'',role=document.getElementById('nuRole').value,to=document.getElementById('nuTo').value;
+    u.nuDraft={name,role,to};u.nuDup=null;
+    if(!name){toast('Enter a name.');return;}
+    const dup=sameName(name);if(dup){u.nuDup=dup;render();toast(dup.name+' is already in the team.');return;}
+    u.nuConfirm={name,role,to};render();}
+  else if(a==='nuNo'){if(u.nuBusy)return;u.nuConfirm=null;render();}
+  else if(a==='nuYes'){const c=u.nuConfirm;if(!c||u.nuBusy)return;
+    const dup=sameName(c.name);if(dup){u.nuConfirm=null;u.nuDup=dup;render();return;}
+    u.nuBusy=true;render();const nid=uid('u');
+    const addMut=d=>{if(!d.users.some(x=>normName(x.name)===normName(c.name))&&d.users.some(x=>x.id===c.to))d.users.push({id:nid,name:c.name,role:c.role,reportsTo:c.to});};
+    try{await commit(addMut,`Added ${c.name} as ${ROLE[c.role].label}`);if(!D().users.some(x=>x.id===nid)&&!sameName(c.name))await commit(addMut,`Added ${c.name} as ${ROLE[c.role].label}`);}catch(err){}
+    u.nuBusy=false;u.nuConfirm=null;
+    if(D().users.some(x=>x.id===nid)){u.nuDraft=null;render();toast(c.name+' added.');afterMemberAdded(nid);}
+    else{const d2=sameName(c.name);if(d2)u.nuDup=d2;render();toast(d2?c.name+' is already in the team.':c.name+' could not be added. Reload and try again.');}}
+  else if(a==='rmUser'){u.rmUser=el.dataset.v;render();}
+  else if(a==='rmNo'){if(e.target.closest('[data-stop]')&&!e.target.closest('button[data-act="rmNo"]'))return;if(u.rmBusy)return;u.rmUser=null;render();}
+  else if(a==='rmYes'){const id=el.dataset.v,t=D().users.find(x=>x.id===id);if(!t||!canRemove(t)||u.rmBusy)return;
+    const po=(document.getElementById('rmProj')||{}).value,pm=(document.getElementById('rmMgr')||{}).value;
+    if(D().projects.some(p=>p.ownerId===id)&&!po||D().users.some(x=>x.reportsTo===id)&&!pm){toast('Choose who takes over first.');return;}
+    const np=D().projects.filter(p=>p.ownerId===id).length;
+    u.rmBusy=true;render();
+    const rmMut=d=>{d.projects.forEach(p=>{if(p.ownerId===id)p.ownerId=po;});d.users.forEach(x=>{if(x.reportsTo===id)x.reportsTo=pm;});
+      if(!(d.former||[]).some(f=>f.id===id))d.former=(d.former||[]).concat({id,name:t.name,role:t.role,reportsTo:t.reportsTo,removedAt:nowStamp(),removedBy:viewer().id});
+      d.users=d.users.filter(x=>x.id!==id);},rmText=`Removed ${t.name} (${ROLE[t.role].label})${np?`; ${np} project${np>1?'s':''} moved to ${user(po)?.name||''}`:''}`;
+    const okTo=()=>(!po||D().users.some(x=>x.id===po))&&(!pm||D().users.some(x=>x.id===pm));
+    try{await commit(rmMut,rmText);if(D().users.some(x=>x.id===id)&&okTo())await commit(rmMut,rmText);}catch(err){}
+    u.rmBusy=false;u.rmUser=null;app.accounts=null;render();
+    toast(D().users.some(x=>x.id===id)?t.name+' could not be removed. Reload and try again.':t.name+' removed.');}},true);
 /* ---------- render & events ---------- */
 function render(){
   MEMO={};
@@ -2732,7 +2788,7 @@ function render(){
   if(app.ui.tab==='upload'&&viewer().role==='L1')app.ui.tab='overview';
   const t=app.ui.tab;
   const rp=app.ui.report&&visibleProjects().some(p=>p.id===app.ui.report);
-  root.innerHTML=header()+`<main>${rp?reportView(app.ui.report):t==='overview'?overview():t==='upload'?uploadView():t==='repo'?repoView():t==='studio'?studioTab():teamView()}</main>`+modal()+dataModal()+studioModal()+feedbackModal();
+  root.innerHTML=header()+`<main>${rp?reportView(app.ui.report):t==='overview'?overview():t==='upload'?uploadView():t==='repo'?repoView():t==='studio'?studioTab():teamView()}</main>`+modal()+dataModal()+studioModal()+feedbackModal()+removeModal();
   if(app.ui.studio&&app.ui.tab==='studio')setTimeout(paintStudio,0);
   if(app.ui.tab==='studio')setTimeout(scoreAllCreatives,0);
   if(focusId){const el=document.getElementById(focusId);if(el&&el.focus){el.focus();if(el.type==='search'){const n=el.value.length;try{el.setSelectionRange(n,n);}catch(e){}}}}
@@ -2809,6 +2865,7 @@ document.addEventListener('click',e=>{
     case 'saveNote':{const p=proj(v),text=document.getElementById('noteText').value.trim();commit(x=>{x.notes=x.notes||{};x.notes[v]={text,by:u.viewer,at:nowStamp()};},`Updated analyst comments for ${p.name}`,v);toast('Comments saved.');break;}
     case 'addProject':{const g=id=>document.getElementById(id).value.trim();const loc=g('npLoc'),brand=g('npBrand'),name=g('npName');
       if(!loc||!brand||!name){toast('Enter a location, brand and project name.');break;}
+      {const dp=D().projects.find(p=>normName(p.name)===normName(name)&&normName(p.brand)===normName(brand));if(dp){toast(`${dp.name} (${dp.brand}) is already a project. Nothing was added.`);break;}}
       const npid=uid('p'),brd=viewer().role==='L1';u.tab='overview';u.loc=loc;u.brand=brand;u.project=npid;if(!brd){u.editProfile=npid;u.pfDraft=blankProfile();}commit(d=>d.projects.push({id:npid,location:loc,brand,name,startDate:g('npStart')||todayISO(),ownerId:g('npOwner'),cadence:g('npCad')}),`Added project ${name} (${brand}, ${loc})`,npid);window.scrollTo(0,0);toast(brd?'Project added. '+(user(g('npOwner'))?.name||'The owner')+' will add its details.':'Project added. Now add its details.');break;}
     case 'addUser':{const name=document.getElementById('nuName').value.trim();if(!name){toast('Enter a name.');break;}
       const role=document.getElementById('nuRole').value,to=document.getElementById('nuTo').value;

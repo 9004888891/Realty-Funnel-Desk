@@ -165,6 +165,11 @@ Each person signs in with a username and password; their role decides what the *
 
 From the team sheet: **L1** Viresh. **Team Leads** Iliyas Shaikh, Neha Singh, Thomas Joseph. **Account Managers** Chaitanya Sharma and Ashutosh Chauhan (Iliyas); Allwyn Coutinho and Kamal Jagate (Neha Singh); Aman Mishra and Dimple Yadav (Thomas). **Sr Executives / Executives**: Shubham Chaurasia (Chaitanya); Dipen Patel (Ashutosh); Shruti Zaware (Allwyn); Sourav Singh, Anjali Parmar (Kamal); Manik Jayee, Wajahat Ali, Raj Roy (Aman); Aijaz Shaikh, Khushi Balmiki, Arya Mondel (Dimple). The roster is the `ROSTER` list in `public/index.html`; saved data from earlier versions is moved onto it automatically on first load (members added through Team & access are kept).
 
+## Adding and removing team members
+- **Add:** Team & access → Add a team member (Team Leads and AMs for their own team; L1 for anyone). The dashboard checks the name first: if someone with the same name already exists (ignoring capitals and extra spaces) it stops and says who. Otherwise it asks you to confirm the name, role and manager before saving. Double clicks cannot add the same person twice, and the server also refuses a second person with the same name.
+- **Remove:** Remove next to the person's name under Team structure / Your team. L1 can remove anyone except themselves; Team Leads and AMs can remove people below them in their own team. You choose who takes over their projects and who their direct reports now report to, then confirm. Their sign-in is deleted and their sessions end straight away; their uploads and history stay, shown under their name marked "(removed)". The server refuses a removal that would leave projects or people without an owner.
+- **Projects:** adding a project with the same name under the same brand is refused.
+
 ## Access by role
 
 | Role | Sees | Can do |
