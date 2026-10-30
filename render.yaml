@@ -19,3 +19,5 @@ services:
         value: "1"
       - key: SETUP_KEY
         generateValue: true
+      - key: PERF_API_TOKEN      # read-only token for /api/creative-performance (other dashboards)
+        generateValue: true

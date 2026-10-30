@@ -26,6 +26,7 @@ if (fs.existsSync(STATE)) state = JSON.parse(fs.readFileSync(STATE, 'utf8'));
 // Sign-in: set AUTH=off only for a private demo on your own computer
 const AUTH_ON = process.env.AUTH !== 'off';
 const Auth = require('./auth')(DATA_DIR);
+const Perf = require('./perf');
 if (AUTH_ON && state.data) Auth.syncAccounts(state.data, console.log);
 
 function persist() {
@@ -76,6 +77,24 @@ http.createServer(async (req, res) => {
       if (!AUTH_ON) return send(res, 200, { auth: false });
       if (!state.data) return send(res, 200, { setup: true, key: !!process.env.SETUP_KEY });
       return uid ? send(res, 200, { auth: true, ...Auth.me(uid) }) : send(res, 401, { error: 'Sign in' });
+    }
+    // Creative performance feed for other dashboards (and the creative-heatmap module).
+    // Signed-in users see their own projects; other systems use PERF_API_TOKEN (Authorization: Bearer …), read-only.
+    if (p === '/api/creative-performance') {
+      const allow = process.env.PERF_ALLOW_ORIGIN, origin = req.headers.origin;
+      if (allow && origin && allow.split(',').map(s => s.trim()).includes(origin)) {
+        res.setHeader('Access-Control-Allow-Origin', origin); res.setHeader('Vary', 'Origin');
+        res.setHeader('Access-Control-Allow-Headers', 'Authorization'); res.setHeader('Access-Control-Allow-Methods', 'GET');
+      }
+      if (req.method === 'OPTIONS') { res.writeHead(204); return res.end(); }
+      if (req.method !== 'GET') return send(res, 405, { error: 'Use GET.' });
+      if (!state.data) return send(res, 404, { error: 'No data yet.' });
+      const tok = process.env.PERF_API_TOKEN, bearer = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+      const tokenOk = !!(tok && bearer && bearer.length === tok.length && crypto.timingSafeEqual(Buffer.from(bearer), Buffer.from(tok)));
+      if (AUTH_ON && !uid && !tokenOk) return send(res, 401, { error: 'Sign in, or send the API token.' });
+      const vis = tokenOk || !AUTH_ON ? null : Auth.visible(state.data, uid);
+      const r = Perf.creativePerformance(state.data, url.searchParams, vis);
+      return send(res, r.code, r.body);
     }
     const firstSetup = AUTH_ON && !state.data && p === '/api/state';
     if (AUTH_ON && !uid && !firstSetup && (p.startsWith('/api/') || p.startsWith('/files/'))) return send(res, 401, { error: 'Sign in' });

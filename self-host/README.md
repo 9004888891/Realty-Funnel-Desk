@@ -235,6 +235,19 @@ The dashboard and every project page start with a filter bar: **Location**, **Br
 - **Message theme** is read from the name too: festive / offer, price and payment plan, connectivity and location, amenities and lifestyle, family, site walkthrough, configuration, testimonial, brand.
 - **Inferences and suggestions** compare formats and themes on CPQL (CPL where QL isn't in the export), name the best static and video (at least 10 leads and 3 QL), flag creatives that spent without a qualified lead, and suggest budget shifts, new variants and briefs. Project-level points also feed the automatic observations and way forward; a review the team has already saved is kept, and Edit review offers the new points.
 
+## Creative performance feed (for other dashboards)
+`GET /api/creative-performance?project=<id or name>&from=YYYY-MM-DD&to=YYYY-MM-DD` returns one row per ad or creative, plus the project total:
+
+- **Fields:** spend, impressions, clicks, leads, QL and SV, and the platform and campaign for each row.
+- **Source:** the uploaded platform exports and CRM data. The rules match the Creatives table on the dashboard: creative-level exports first, and newer files win where periods overlap.
+- **Without `project`:** the call lists the projects the caller can see.
+- **Without dates:** the call covers everything uploaded.
+- **Access:** signed-in users get only their own projects. Another system (for example your main dashboard's server) uses a read-only token:
+  - Set `PERF_API_TOKEN` to a long random value and send `Authorization: Bearer <token>`.
+  - Keep the token on that system's server. The creative-heatmap package has a ready relay (`server/performance-proxy.cjs`).
+  - `PERF_ALLOW_ORIGIN` (comma-separated) lists other websites allowed to call the feed from a browser.
+- **Missing QL and SV:** they are left empty when the uploads for a project don't carry them by ad name or UTM content.
+
 ## Before company-wide use
 
 This is a prototype for review. Plan these items before all 40+ people use it daily:
